@@ -1,0 +1,162 @@
+# FH2-DualSense
+
+**PlayStation 5 DualSense support for Forza Horizon 2 (Xbox One) on the Azimuth 0.9.7 emulator.**
+All buttons, HD haptics, adaptive triggers driven by the car itself, PlayStation button icons that follow the device
+you are using, light bar and player LEDs. Drop-in DLLs: no drivers, no Steam Input, no DS4Windows.
+
+[Русская версия](README.ru.md)
+
+---
+
+## Features
+
+### The controller
+- **USB or Bluetooth**, DualSense and **DualSense Edge** (back paddles and Fn buttons can be assigned).
+- The game sees it as player 1's Xbox gamepad. An Xbox pad and the keyboard (`Keyboard.dll`) work at the same time.
+- **Touchpad**: click = View, swipes = D-pad. **Create** = View, **Options** = Menu (both configurable).
+- **PS button**: shows the battery level on the player LEDs for 3 seconds.
+- **Gyro steering**: the mic button switches it on and off (the mic LED shows it); tilt the controller like a wheel.
+
+### Vibration
+- **HD haptics over USB**: the game's two rumble motors are played as tones on the DualSense's voice-coil actuators.
+- **The car in your hands** (from the game's own feedback data): an engine hum that follows the revs, knocking on
+  the rev limiter, a knock at each gear change, the road's roughness.
+- **Bluetooth**: the DualSense's rumble emulation (the improved v2 on firmware 2.24 and later), with gear changes
+  and the rev limiter.
+
+### Adaptive triggers
+The mod reads the data the game computes every frame for its own rumble (engine revs, the tyres' slip front and rear,
+braking and spinning slip, collisions, gear changes) and turns it into trigger effects:
+
+| | |
+|---|---|
+| **L2, brake** | A brake pedal that gets stiffer towards the end of its travel. When the front tyres reach their grip limit it starts to chatter like a pedal with ABS at work; the deeper the wheels lock, the harder and faster it judders. |
+| **R2, throttle** | A light constant resistance. Vibrates with wheel spin, stronger the more the wheels spin. Knocks on the rev limiter. |
+| **Gear change** | A short knock on the trigger you are pressing: R2 on the way up, L2 when shifting down under braking. |
+| **Crash** | A jolt in both triggers, by the strength of the impact. |
+| **Menus, pause, loading** | The triggers are free. |
+
+There is an **Adaptive Triggers On/Off switch in the game's own controller settings** (Settings > Controls); it is
+saved to `DualSense.ini`. Everything else (strengths, thresholds, the pedal's shape) is in `DualSense.ini`.
+
+If the game build differs and the car data is not found, the triggers fall back to the game's Xbox One impulse
+trigger levels (wheel lock on L2, wheel spin on R2) and the resistance.
+
+### Button icons
+- **Three looks**: PlayStation (the DualSense), the game's own Xbox icons (an Xbox pad), and **keyboard keys**
+  (when `Keyboard.dll` is installed; drawn from your `Keyboard.ini` bindings).
+- The icons **switch live** to the device you used last, in menus, prompts and hints.
+- The controls screen keeps the game's own controller drawing; only the button marks are replaced.
+- The PlayStation pictures are plain PNGs in `DualSense.icons` (a zip). Change any of them, keeping its size.
+
+### Light bar and LEDs
+- Light bar modes: **Rumble** (a colour flashing with impacts and sliding tyres), **Revs** (turns red towards the
+  redline, flashes on the limiter), **Static**, **Battery**, **Off**. Low battery blinks red.
+- The five player LEDs work as a **rev counter** while driving.
+
+---
+
+## Requirements
+- Windows 10 or 11, x64.
+- Forza Horizon 2 for Xbox One (1.0.0.64) running on **Azimuth 0.9.7**. Neither is included; use your own copy.
+- The mod loader from the release (`azimuth-tls.dll`), or any loader that loads `mods\*.dll` once the game is mapped.
+
+Made and tested for Forza Horizon 2. Forza Horizon 2 Presents Fast & Furious uses the same engine but is not tested.
+
+## Installation
+1. Download the files from [Releases](../../releases): `DualSense.dll`, `DualSense.icons`, `azimuth-tls.dll` and,
+   for the keyboard, `Keyboard.dll`.
+2. **The mod loader** (once): in `<Azimuth>\data\bin\` rename `azimuth-tls.dll` to `azimuth-tls.dll.original`
+   and put the downloaded `azimuth-tls.dll` there.
+3. Create `<Azimuth>\mods\` and put `DualSense.dll` and `DualSense.icons` in it (and `Keyboard.dll` if you want it).
+4. Turn off Steam's *PlayStation Configuration Support* for the emulator and close DS4Windows. If you use HidHide,
+   let `azimuth.exe` see the controller.
+5. Start the game. The settings files (`DualSense.ini`, `Keyboard.ini`) are created in `mods\` on the first start;
+   the log is `mods\DualSense.log`.
+
+**Remove**: delete the files from `mods\` and rename `azimuth-tls.dll.original` back. To switch a single mod off,
+rename it so it starts with `_` (for example `_Keyboard.dll`).
+
+## Settings (`mods\DualSense.ini`)
+Every setting is explained in the file itself. In short:
+
+| Section | What is there |
+|---|---|
+| `[DualSense]` | Japanese layout (Circle confirms), what the touchpad click, Create, the Edge paddles and Fn buttons do, touchpad swipes, the PS button. |
+| `[Vibration]` | `Mode` = Auto / Audio (HD haptics) / Rumble / Off, `Strength`, the haptic tones, `Car` = how much of the engine, rev limiter and gear changes you feel. |
+| `[Triggers]` | `Enabled` (same as the in-game switch), `Mode` = Game / ResistanceOnly / Off, `Strength`, the brake pedal's shape (`BrakeResistance`, `BrakeStart`, `BrakeForceStart`, `BrakeForceEnd`), the throttle's resistance, vibration frequencies, where L2 and R2 start to vibrate (`BrakeVibrationFrom`, `SpinVibrationFrom`, in percent of the grip limit), `GearChangeKick`, `RevLimiter`, `CrashJolt`, `FreeInMenus`. |
+| `[Lightbar]` | `Mode`, `Color`, `FlashColor`, `Brightness`, `LowBatteryBlink`, `RevLights`. |
+| `[Icons]` | `PlayStation` = Auto (follow the device) / On (always PlayStation) / Off (the game's own). |
+| `[Gyro]` | `Steering` = Toggle (mic button) / On / Off, `MaxAngle`, `Invert`. |
+
+## Keyboard (`Keyboard.dll`, optional)
+The keyboard becomes an Xbox gamepad with smooth steering and pedals. Defaults (all in `mods\Keyboard.ini`):
+
+| Control | Keys | Control | Keys |
+|---|---|---|---|
+| Throttle / Brake | W / S | Steer | A / D |
+| A | Space, Enter | B | E, Backspace |
+| X | Q | Y | R |
+| LB / RB | Left Shift / C | L3 / R3 | F / V |
+| Menu / View | Esc / Tab | D-pad | arrow keys |
+| Look around | I J K L | | |
+
+## Troubleshooting
+- **The controller does nothing**: see `mods\DualSense.log`. "no DualSense connected" = Windows does not see it;
+  "does not open" = another program has it (Steam Input, DS4Windows, HidHide).
+- **No HD haptics over Bluetooth**: Windows only exposes the DualSense's haptics audio over USB; Bluetooth uses the
+  rumble emulation.
+- **The triggers have no effect**: switch *Adaptive Triggers* on in the game's controller settings, or set
+  `[Triggers] Enabled=1`.
+- **Icons do not change**: check `[Icons] PlayStation=Auto` and the `icons:` lines in the log.
+- **Steam and the mod both drive the lights/rumble**: turn off Steam's PlayStation Configuration Support for the
+  emulator.
+
+## Building from source
+```
+build.cmd            builds into out\mods\
+build.cmd install    also copies the files into ..\Azimuth\mods and ..\Azimuth FF\mods
+```
+- **C compiler**: Visual Studio Build Tools (C++) or zig (`python -m pip install ziglang`); `build.cmd` uses
+  whichever it finds.
+- **The icon pack** (`DualSense.icons`, `tools\make_pack.py`): Python 3 with numpy and Pillow, and the game's files
+  (`..\Forza Horizon 2\Mount`): the icons are drawn in the sizes of the game's own, and the game's `xg_x.dll`
+  (from its `EmbeddedXvd`) is used through a small stub (`tools\xg\kernelx.c`) for the Xbox texture layouts.
+- **The mod loader** (`loader\modloader.c`): MSVC, without the C runtime (`/NODEFAULTLIB`, entry `DllMain`).
+
+| Folder | What is there |
+|---|---|
+| `DualSense\` | `DualSense.c` the controller, vibration, triggers, lights; `car.h` the car's data; `ui.h` the switch in the game's settings; `icons.h` the icon looks and their live switch; `texture.h`, `bc7.h`, `png.h`, `inflate.h`, `keyicons.h`, `tables.h` textures, decoders and the keyboard keycaps |
+| `Keyboard\` | the keyboard mod |
+| `common\` | shared code: log, ini, finding the engine's XInput table and the game's code |
+| `loader\` | the mod loader |
+| `tools\` | the icon pack, generated tables, the ini-to-header step |
+
+## How it works (for modders)
+Everything is found by code signatures, not fixed addresses; when something is not found, the log says so and only
+that part is left out. The addresses below are for Forza Horizon 2 1.0.0.64 and Azimuth 0.9.7.
+
+- **Input/rumble**: the engine calls XInput through its own table of function pointers; `GetState` and `SetState`
+  are replaced. `Gamepad::SetVibration` is hooked for the impulse trigger levels, which the engine drops.
+- **The car's data**: the player car's feedback update (0x2FD740) hands its inputs to the rumble and the impulse
+  triggers through two thunks (0x10768B0, 0x10768A0); their first bytes become jumps to the mod, which keeps the
+  values and calls the game's functions itself.
+- **The settings switch**: a new property (`AdaptiveTriggers`) is added to the controller options view model when
+  the game registers its properties, modelled on the camera look-back switch; a row is added to the screen's XAML.
+- **Files**: the engine's `CreateFileW` and related imports are hooked. The icon archives, the controls screen
+  drawing, the settings XAML and `zipmanifest.xml` are served from `mods\DualSense.cache\`, built at the game's
+  start.
+- **Live icon switch**: Azimuth seals texture memory nobody writes to (read-only) and uploads it again when written.
+  The mod finds the icons in memory and writes the wanted look over them; the engine's exception handler unseals the
+  pages and sends the textures to the GPU again.
+- **Exports**: `DualSense.dll` exports `Fh2IconLook()` and `Fh2SwitchIcons(int)`; `Keyboard.dll` exports
+  `Fh2KeyboardLastInput()`.
+
+## Credits
+- DualSense report layouts: the Linux kernel's `hid-playstation` driver.
+- Adaptive trigger effect encoding: Nielk1's DualSense trigger effect notes (MIT).
+
+## Disclaimer
+This project is not affiliated with or endorsed by Microsoft, Xbox Game Studios, Playground Games, Turn 10 Studios or
+Sony Interactive Entertainment. Forza Horizon, Xbox, PlayStation and DualSense are trademarks of their respective
+owners. No game files are included; you need your own copy of the game.

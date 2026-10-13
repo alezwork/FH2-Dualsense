@@ -1,0 +1,15 @@
+LIBRARY kernelx
+EXPORTS
+    XMemAlloc
+    XMemFree
+    TerminateProcess=kernel32.TerminateProcess
+    GetCurrentProcess=kernel32.GetCurrentProcess
+    SetUnhandledExceptionFilter=kernel32.SetUnhandledExceptionFilter
+    UnhandledExceptionFilter=kernel32.UnhandledExceptionFilter
+    GetTickCount=kernel32.GetTickCount
+    GetSystemTimeAsFileTime=kernel32.GetSystemTimeAsFileTime
+    GetCurrentThreadId=kernel32.GetCurrentThreadId
+    GetCurrentProcessId=kernel32.GetCurrentProcessId
+    QueryPerformanceCounter=kernel32.QueryPerformanceCounter
+    Sleep=kernel32.Sleep
+    OutputDebugStringA=kernel32.OutputDebugStringA
