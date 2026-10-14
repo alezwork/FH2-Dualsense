@@ -22,6 +22,8 @@ no DS4Windows.
 - **HD haptics over USB**: the game's two rumble motors are played as tones on the DualSense's voice-coil actuators.
 - **The car in your hands** (from the game's own feedback data): an engine hum that follows the revs, knocking on
   the rev limiter, a knock at each gear change, the road's roughness.
+- **Crashes in proportion**: the game shakes the pad at full for any touch of a fence or a bush; here its crash
+  rumble grows with the real impact instead.
 - **Bluetooth**: the DualSense's rumble emulation (the improved v2 on firmware 2.24 and later), with gear changes
   and the rev limiter.
 
@@ -34,7 +36,7 @@ braking and spinning slip, collisions, gear changes) and turns it into trigger e
 | **L2, brake** | A brake pedal that gets stiffer towards the end of its travel. When the front tyres reach their grip limit it starts to chatter like a pedal with ABS at work; the deeper the wheels lock, the harder and faster it judders. |
 | **R2, throttle** | A light constant resistance. Vibrates with wheel spin, stronger the more the wheels spin. Knocks on the rev limiter. |
 | **Gear change** | A short knock on the trigger you are pressing: R2 on the way up, L2 when shifting down under braking. |
-| **Crash** | A jolt in both triggers, by the strength of the impact. |
+| **Crash** | A jolt in both triggers that fades, by the strength of the impact: a scrape or a bush lightly, a pole or a wall at speed hard. |
 | **Menus, pause, loading** | The triggers are free. |
 
 ### Impulse triggers (Xbox controller)
@@ -50,7 +52,7 @@ which plain XInput on a PC cannot reach. The mod drives them through Windows.Gam
 The pad's two big motors get the game's rumble as before (plus the gear changes and the rev limiter). Works over USB
 and the Xbox Wireless Adapter; over Bluetooth only where Windows passes the trigger motors on.
 
-There is an **Adaptive Triggers On/Off switch in the game's own controller settings** (Settings > Controls); it
+There is a **Trigger Feedback On/Off switch in the game's own controller settings** (Settings > Controls); it
 switches the DualSense's adaptive triggers and the Xbox impulse triggers together and is saved to `DualSense.ini`.
 If the game build differs and the car data is not found, both fall back to the game's Xbox One impulse trigger levels.
 
@@ -101,8 +103,8 @@ Every setting is explained in the file itself. In short:
 | Section | What is there |
 |---|---|
 | `[DualSense]` | The DualSense on/off, Japanese layout (Circle confirms), what the touchpad click, Create, the Edge paddles and Fn buttons do, touchpad swipes, the PS button. |
-| `[Vibration]` | `Mode` = Auto / Audio (HD haptics) / Rumble / Off, `Strength`, the haptic tones, `Car` = how much of the engine, rev limiter and gear changes you feel. |
-| `[Triggers]` | `Enabled` (same as the in-game switch), `Mode` = Game / ResistanceOnly / Off, `Strength`, the brake pedal's shape (`BrakeResistance`, `BrakeStart`, `BrakeForceStart`, `BrakeForceEnd`), the throttle's resistance, vibration frequencies, where the triggers start to vibrate (`BrakeVibrationFrom`, `SpinVibrationFrom`, in percent of the grip limit, for the Xbox pad too), `GearChangeKick`, `RevLimiter`, `CrashJolt`, `FreeInMenus`. |
+| `[Vibration]` | `Mode` = Auto / Audio (HD haptics) / Rumble / Off, `Strength`, the haptic tones, `Car` = how much of the engine, rev limiter and gear changes you feel, `Collisions` = the crash rumble. |
+| `[Triggers]` | `Enabled` (same as the in-game switch), `Mode` = Game / ResistanceOnly / Off, `Strength`, the brake pedal's shape (`BrakeResistance`, `BrakeStart`, `BrakeForceStart`, `BrakeForceEnd`), the throttle's resistance, vibration frequencies, where the triggers start to vibrate (`BrakeSlipStart`, `SpinSlipStart`, in percent of the grip limit, for the Xbox pad too), `GearChangeKick`, `RevLimiter`, `CrashJolt`, `FreeInMenus`. |
 | `[ImpulseTriggers]` | The Xbox controller's impulse triggers: `Enabled`, `Strength`. |
 | `[Lightbar]` | `Mode`, `Color`, `FlashColor`, `Brightness`, `LowBatteryBlink`, `RevLights`. |
 | `[Icons]` | `PlayStation` = Auto (follow the device) / On (always PlayStation) / Off (the game's own). |
@@ -128,7 +130,7 @@ Default keys:
   or the Xbox Wireless Adapter; over Bluetooth the trigger motors often do not get through.
 - **No HD haptics over Bluetooth**: Windows only exposes the DualSense's haptics audio over USB; Bluetooth uses the
   rumble emulation.
-- **The triggers have no effect**: switch *Adaptive Triggers* on in the game's controller settings, or set
+- **The triggers have no effect**: switch *Trigger Feedback* on in the game's controller settings, or set
   `[Triggers] Enabled=1`.
 - **Icons do not change**: check `[Icons] PlayStation=Auto` and the `icons:` lines in the log.
 - **Steam and the mod both drive the lights/rumble**: turn off Steam's PlayStation Configuration Support for the
@@ -167,10 +169,12 @@ that part is left out. The addresses below are for Forza Horizon 2 1.0.0.64 and 
   are replaced. `Gamepad::SetVibration` is hooked for the impulse trigger levels, which the engine drops.
 - **The car's data**: the player car's feedback update (0x2FD740) hands its inputs to the rumble and the impulse
   triggers through two thunks (0x10768B0, 0x10768A0); their first bytes become jumps to the mod, which keeps the
-  values and calls the game's functions itself.
+  values and calls the game's functions itself. Crashes are scaled logarithmically between "felt" and "a big one"
+  per kind (cars 10..400, walls 25..375, objects 0.8..30, measured in the game) and fade in 90 ms; the slips are
+  smoothed. The game's own crash rumble curves (three points each) are set to the same scale in its memory.
 - **Impulse triggers**: `Windows.Gaming.Input.Gamepad` through its WinRT interfaces, declared in C by their vtables;
   while it sees Xbox pads, their whole rumble goes that way (XInput and it would fight over the big motors).
-- **The settings switch**: a new property (`AdaptiveTriggers`) is added to the controller options view model when
+- **The settings switch**: a new property (`TriggerFeedback`) is added to the controller options view model when
   the game registers its properties, modelled on the camera look-back switch; a row is added to the screen's XAML.
 - **Files**: the engine's `CreateFileW` and related imports are hooked. The icon archives, the controls screen
   drawing, the settings XAML and `zipmanifest.xml` are served from `mods\DualSense.cache\`, built at the game's

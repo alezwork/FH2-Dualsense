@@ -1,7 +1,8 @@
-/* ui.h -- "Adaptive triggers" On/Off in the game's controller settings (Settings > Controls).
+/* ui.h -- "Trigger feedback" On/Off in the game's controller settings (Settings > Controls): the DualSense's
+   adaptive triggers and the Xbox controller's impulse triggers.
    The game's UI is XAML bound to C++ view models; a view model type lists its properties once, when it is first used
    (FH2 1.0.0.64: 0xD012E0 adds eight descriptors to the controller options type with 0x155EE30). This adds a ninth,
-   AdaptiveTriggers, made like the game's InvertCameraLookBack descriptor (0xD121F0: base init 0x143EB80, the value
+   TriggerFeedback, made like the game's InvertCameraLookBack descriptor (0xD121F0: base init 0x143EB80, the value
    type 0x15C8B20(0), a getter thunk that boxes an int with 0x4702D0, a setter thunk that reads it at +0x28), with
    our getter and setter: the value lives in mods\DualSense.ini [Triggers] Enabled. icons.h puts the switch into the
    XAML (A_ControllerOptions.xaml, after the camera look-back switch). Everything is found by its code around the
@@ -48,7 +49,7 @@ static void __fastcall ui_set(void *x, void *obj, BYTE *boxed)
     InterlockedExchange(&g_outDirty, 1);
     if (g_wake)
         SetEvent(g_wake);
-    fh2_say("adaptive triggers %s (the game's controller settings)", v ? "on" : "off");
+    fh2_say("trigger feedback %s (the game's controller settings)", v ? "on" : "off");
 }
 
 static void __fastcall ui_class_init(void)
@@ -61,13 +62,13 @@ static void __fastcall ui_class_init(void)
     *(void **)(g_desc + 0x28) = (void *)ui_get;
     *(void **)(g_desc + 0x30) = (void *)ui_set;
     *(void **)(g_desc + 0x38) = NULL;
-    *(const char **)(g_desc + 0x40) = "AdaptiveTriggers";
+    *(const char **)(g_desc + 0x40) = "TriggerFeedback";
     *(void **)(g_desc + 0x48) = vt;
     g_desc[0x50] &= 0xF0;
     *(void **)g_desc = g_descVtable;
     g_pair[0] = g_desc, g_pair[1] = NULL;
     g_addProp(g_vmType, g_pair);
-    fh2_say("adaptive triggers: the switch is in the game's controller settings");
+    fh2_say("trigger feedback: the switch is in the game's controller settings");
 }
 
 /* the game's image (mapped by the engine at its preferred base) */
@@ -124,7 +125,7 @@ static int ui_install(void)
     static const char kName[] = "InvertCameraLookBack";
     g_trigOn = fh2_ini_int(L"Triggers", L"Enabled", 1) != 0;
     if (!game_image(&g)) {
-        fh2_say("adaptive triggers: the game's image is not where it should be -- no switch in its settings");
+        fh2_say("trigger feedback: the game's image is not where it should be -- no switch in its settings");
         return 0;
     }
     BYTE *str = NULL;
@@ -143,7 +144,7 @@ static int ui_install(void)
             L = p;
     BYTE *descFn = L ? game_func(&g, L) : NULL;
     if (!descFn) {
-        fh2_say("adaptive triggers: the game's settings code is not as expected -- no switch in its settings");
+        fh2_say("trigger feedback: the game's settings code is not as expected -- no switch in its settings");
         return 0;
     }
     g_valueType = (ValueTypeFn)rel32(L - 0x3E, 1, 5);
@@ -165,7 +166,7 @@ static int ui_install(void)
     static const BYTE kProlog[18] = {0x40, 0x53, 0x48, 0x81, 0xEC, 0xD0, 0x00, 0x00, 0x00,
                                      0x48, 0xC7, 0x44, 0x24, 0x20, 0xFE, 0xFF, 0xFF, 0xFF};
     if (!classInit || !g_boxInt || memcmp(classInit, kProlog, sizeof kProlog)) {
-        fh2_say("adaptive triggers: the game's settings code is not as expected (property list %p, box %p) -- no switch",
+        fh2_say("trigger feedback: the game's settings code is not as expected (property list %p, box %p) -- no switch",
                 classInit, (void *)g_boxInt);
         return 0;
     }
@@ -186,7 +187,7 @@ static int ui_install(void)
     *(void **)(classInit + 6) = (void *)ui_class_init;
     VirtualProtect(classInit, 14, old, &old);
     FlushInstructionCache(GetCurrentProcess(), classInit, 14);
-    fh2_say("adaptive triggers: %s; the settings switch hooked (game+0x%lX, its list game+0x%lX)", g_trigOn ? "on" : "off",
+    fh2_say("trigger feedback: %s; the settings switch hooked (game+0x%lX, its list game+0x%lX)", g_trigOn ? "on" : "off",
             (DWORD)(descFn - g.base), (DWORD)(classInit - g.base));
     return 1;
 }

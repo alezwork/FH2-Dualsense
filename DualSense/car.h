@@ -35,16 +35,16 @@ static CarHapticsFn g_carHaptics;
 static volatile struct {
     double at;                      /* fh2_now() of the last frame; 0 = never */
     float rpm, slipFront, slipRear, bump;
-    float spin, brake;              /* the haptics' slips: the most spinning wheel, the front wheels braking */
+    float spin, brake;              /* the haptics' slips, smoothed: the most spinning wheel, the front wheels braking */
     double shiftAt, hitAt;          /* the last gear change, the last crash */
-    float hit;                      /* its strength 0..1 */
+    float hit;                      /* the crash's strength 0..1 (it fades: car_hit) */
     int hooked;
 } Car;
 
 /* the log: what came in, to tune by (the most of each over 10 seconds of driving) */
 static struct {
     double from;
-    float rpm, spin, brake, front, rear, bump, car, world, object;
+    float rpm, spin, brake, front, rear, bump, car, world, object, hit;
     int shifts, hits, frames;
 } g_carLog;
 
@@ -60,11 +60,52 @@ static void car_log(double now)
     if (now - g_carLog.from < 10)
         return;
     fh2_say("car, the most in 10 s (%d frames): revs %.2f, spin %.2f, brake slip %.2f, slip front %.2f rear %.2f, "
-            "bumps %.2f, hits car %.1f world %.1f object %.3f; %d gear changes, %d crashes",
+            "bumps %.2f, hits car %.1f world %.1f object %.3f; %d gear changes, %d crashes (the hardest %.2f)",
             g_carLog.frames, g_carLog.rpm, g_carLog.spin, g_carLog.brake, g_carLog.front, g_carLog.rear, g_carLog.bump,
-            g_carLog.car, g_carLog.world, g_carLog.object, g_carLog.shifts, g_carLog.hits);
+            g_carLog.car, g_carLog.world, g_carLog.object, g_carLog.shifts, g_carLog.hits, g_carLog.hit);
     ZeroMemory(&g_carLog, sizeof g_carLog);
     g_carLog.from = now;
+}
+
+/* A crash's strength 0..1 from its impulse, on a log scale between "felt" and "a big one" -- measured in the game:
+   cars 10..400 (a nudge is ~20, a hard hit ~300), walls 25..375, objects 0.8..30 (fences, signs, bushes come every
+   frame at 0.1..5, a pole ~20). It fades in 90 ms; a new one counts only when stronger than what is left of the last,
+   so scraping along a wall or through bushes stays a light rumble, not a row of full jolts. */
+#define CAR_HIT_FADE 0.09f
+
+static float hit_level(float v, float v0, float v1) { return v <= v0 ? 0 : fminf(logf(v / v0) / logf(v1 / v0), 1); }
+
+static float car_hit(double now) { return Car.hitAt ? Car.hit * expf(-(float)(now - Car.hitAt) / CAR_HIT_FADE) : 0; }
+
+/* the game's own rumble for crashes (media\ControllerRumble.xml) wants impulses of 1 (cars), 1 (walls), 0.015
+   (objects) for full rumble -- every brush with a bush shook the pad at full. Its curves (three points: x, y at +0,
+   +4, +0x10, +0x14, +0x20, +0x24; in the controller's copy at +0x2F0: cars 0x100 / 0x140 left / right motor, walls
+   0x210 / 0x250, objects 0x320 / 0x360) are set to the measured scale instead, at [Vibration] Collisions. */
+static void car_tune(BYTE *ctrl)
+{
+    static const struct {
+        DWORD off;
+        float x0, x1, x2, y1, y2; /* y1, y2: of the left (heavy) motor; the right one gets 0.6 of it */
+    } kCurves[] = {{0x100, 10, 80, 400, 0.45f, 1.0f}, {0x210, 25, 120, 375, 0.45f, 1.0f}, {0x320, 0.8f, 4, 30, 0.4f, 1.0f}};
+    float *obj = (float *)(ctrl + 0x2F0 + 0x320);
+    if (obj[0] == 0.8f && obj[8] == 30.0f) /* ours already */
+        return;
+    if (obj[0] != 0.01f || obj[8] != 0.03f) { /* not the game's own tuning: left as it is */
+        static int told;
+        if (!told++)
+            fh2_say("car: the game's crash rumble is not as expected -- left as it is");
+        return;
+    }
+    for (int i = 0; i < 3; i++)
+        for (int side = 0; side < 2; side++) {
+            float *c = (float *)(ctrl + 0x2F0 + kCurves[i].off + side * 0x40), k = S.collisions * (side ? 0.6f : 1.0f);
+            c[0] = kCurves[i].x0, c[1] = 0;
+            c[4] = kCurves[i].x1, c[5] = kCurves[i].y1 * k;
+            c[8] = kCurves[i].x2, c[9] = kCurves[i].y2 * k;
+        }
+    static int said;
+    if (!said++)
+        fh2_say("car: the game's crash rumble set to the real impulse scale, %d%%", (int)(S.collisions * 100 + 0.5f));
 }
 
 static void __fastcall hk_car_rumble(BYTE *ctrl, float dt, const CarIn *in)
@@ -83,12 +124,14 @@ static void __fastcall hk_car_rumble(BYTE *ctrl, float dt, const CarIn *in)
             g_carLog.shifts++;
         }
         shiftWas = in->shift;
-        /* a crash: the impulse scales of media\ControllerRumble.xml (car 1..500, world 20..375, object 0.01..0.03) */
-        float hit = maxf(maxf((in->hitCar - 8) / 250, (in->hitWorld - 25) / 250), (in->hitObject - 0.012f) / 0.02f);
-        if (hit > 0) {
-            Car.hit = hit > 1 ? 1 : hit;
+        float hit = fmaxf(fmaxf(hit_level(in->hitCar, 10, 400), hit_level(in->hitWorld, 25, 375)),
+                          hit_level(in->hitObject, 0.8f, 30));
+        hit = powf(hit, 1.3f); /* the small ones softer still */
+        if (hit > 0.05f && hit > car_hit(now) * 1.15f) {
+            Car.hit = hit;
             Car.hitAt = now;
             g_carLog.hits++;
+            g_carLog.hit = maxf(g_carLog.hit, hit);
         }
         g_carLog.rpm = maxf(g_carLog.rpm, in->rpm);
         g_carLog.front = maxf(g_carLog.front, in->slipFront);
@@ -99,17 +142,26 @@ static void __fastcall hk_car_rumble(BYTE *ctrl, float dt, const CarIn *in)
         g_carLog.object = maxf(g_carLog.object, in->hitObject);
         Car.at = now;
         car_log(now);
+        car_tune(ctrl);
         if (g_wake)
             SetEvent(g_wake);
     }
     g_carRumble(ctrl + 0x2E0, dt, in, (BYTE)(ctrl[6] - 2) <= 1);
 }
 
+/* the slips, smoothed: up in 50 ms, down in 150 ms -- one frame's spike (a kerb, a landing) is not a lock-up */
+static float follow(float v, float target, float dt, float up, float down)
+{
+    float tau = target > v ? up : down;
+    return v + (target - v) * (1 - expf(-dt / tau));
+}
+
 static void __fastcall hk_car_haptics(BYTE *ctrl, float dt, const float *in)
 {
     if (in) {
-        Car.spin = in[0];
-        Car.brake = in[1];
+        float d = dt > 0 && dt < 0.2f ? dt : 0.016f;
+        Car.spin = follow(Car.spin, in[0], d, 0.05f, 0.15f);
+        Car.brake = follow(Car.brake, in[1], d, 0.05f, 0.15f);
         g_carLog.spin = maxf(g_carLog.spin, in[0]);
         g_carLog.brake = maxf(g_carLog.brake, in[1]);
     }

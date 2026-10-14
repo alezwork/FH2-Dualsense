@@ -1,7 +1,7 @@
 /* DualSense.dll -- controllers for Forza Horizon 2 (and Fast & Furious) on Azimuth, one file in Azimuth\mods\:
    the PlayStation 5 controller (DualSense, DualSense Edge; USB or Bluetooth, no other software needed), the Xbox
    controller's impulse triggers (xbox.h), the keyboard (keyboard.h), the button icons that follow the device in use
-   with the PlayStation pictures inside (icons.h), the Adaptive triggers switch in the game's settings (ui.h).
+   with the PlayStation pictures inside (icons.h), the Trigger feedback switch in the game's settings (ui.h).
 
    What the game gets: the DualSense, the real pads and the keyboard as its one Xbox gamepad (XInput user 0 -- the
    engine's XInput table is ours, common\fh2mod.h).
@@ -11,7 +11,7 @@
      audio channels (a low and a high tone per side, from the two motors);
    - the car itself (car.h: the game's own data for its rumble -- engine revs, the tyres' slip, collisions, gear
      changes): an engine hum at its revs, the rev limiter and gear changes in the HD haptics;
-   - adaptive triggers: a brake-pedal resistance on L2 and a light one on R2; L2 chatters at the front tyres' grip
+   - trigger feedback, the adaptive triggers: a brake-pedal resistance on L2 and a light one on R2; L2 chatters at the front tyres' grip
      limit under braking and judders as they lock, R2 vibrates with wheel spin and knocks on the rev limiter, gear
      changes knock, crashes jolt; free in the menus. Without the car's data: the game's Xbox One impulse triggers
      (media\ControllerHaptics.xml; the engine drops them, we take them from Gamepad::SetVibration) as vibration;
@@ -51,12 +51,13 @@ static struct {
     int haptics; /* 0 off, 1 rumble, 2 audio, 3 auto */
     float strength, lowHz, highHz;
     float carFeel; /* the engine, the rev limiter, gear changes in the vibration: 0..1 */
+    float collisions; /* the game's crash rumble on the motors, on the real impulse scale (car.h): 0..1 */
     int triggers; /* 0 off, 1 resistance only, 2 game */
     float trigStrength;
     int brakeResist, throttleResist; /* 0 off, 1 constant, 2 slope */
     int brakeStart, brakeForce0, brakeForce1, throttleStart, throttleForce;
     int brakeHz, throttleHz;
-    float brakeFrom, spinFrom; /* the slip (1 = the grip limit) where L2 / R2 start vibrating */
+    float brakeFrom, spinFrom; /* the slip (1 = the grip limit) where the brake / throttle triggers start vibrating */
     int gearKick, revLimiter, crashJolt, freeInMenus;
     int lightMode; /* 0 off, 1 static, 2 rumble, 3 battery, 4 revs */
     int revLights;
@@ -130,6 +131,7 @@ static void load_settings(void)
     S.lowHz = fh2_ini_float(L"Vibration", L"HapticsLowHz", 45);
     S.highHz = fh2_ini_float(L"Vibration", L"HapticsHighHz", 160);
     S.carFeel = clampi(fh2_ini_int(L"Vibration", L"Car", 40), 0, 100) / 100.0f;
+    S.collisions = clampi(fh2_ini_int(L"Vibration", L"Collisions", 60), 0, 100) / 100.0f;
 
     S.triggers = choice(L"Triggers", L"Mode", L"Game", trg, 3, 2);
     S.trigStrength = clampi(fh2_ini_int(L"Triggers", L"Strength", 100), 0, 100) / 100.0f;
@@ -142,8 +144,8 @@ static void load_settings(void)
     S.throttleForce = clampi(fh2_ini_int(L"Triggers", L"ThrottleForce", 1), 1, 8);
     S.brakeHz = clampi(fh2_ini_int(L"Triggers", L"BrakeVibrationHz", 30), 1, 255);
     S.throttleHz = clampi(fh2_ini_int(L"Triggers", L"ThrottleVibrationHz", 40), 1, 255);
-    S.brakeFrom = clampi(fh2_ini_int(L"Triggers", L"BrakeVibrationFrom", 95), 50, 250) / 100.0f;
-    S.spinFrom = clampi(fh2_ini_int(L"Triggers", L"SpinVibrationFrom", 100), 50, 250) / 100.0f;
+    S.brakeFrom = clampi(fh2_ini_int(L"Triggers", L"BrakeSlipStart", 120), 50, 250) / 100.0f;
+    S.spinFrom = clampi(fh2_ini_int(L"Triggers", L"SpinSlipStart", 80), 30, 250) / 100.0f;
     S.gearKick = fh2_ini_int(L"Triggers", L"GearChangeKick", 1);
     S.revLimiter = fh2_ini_int(L"Triggers", L"RevLimiter", 1);
     S.crashJolt = fh2_ini_int(L"Triggers", L"CrashJolt", 1);
@@ -180,7 +182,7 @@ static float g_trigger[2];  /* the game's impulse triggers (SetVibration): left,
 static volatile LONG g_outDirty;
 static DWORD g_inSetVibration; /* the thread inside the game's SetVibration */
 static HANDLE g_wake;
-static volatile LONG g_trigOn = 1; /* the adaptive triggers on (the switch in the game's settings, ui.h) */
+static volatile LONG g_trigOn = 1; /* trigger feedback on (the switch in the game's settings, ui.h) */
 static volatile ULONGLONG g_dsInputAt, g_padInputAt; /* the last real use of the DualSense / of an XInput pad */
 
 #include "ui.h"
@@ -495,6 +497,24 @@ static void trig_vibration(BYTE *e, float lvl, int hz) { trig_vib(e, (int)(lvl *
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+/* How far into the slip the tyres are, 0..1, eased in and out: from where the feel starts to where it is full. The
+   slips (car.h, smoothed; 1 = the grip limit) run 1..3 in hard braking and 3..8 locked, 0.1..1 accelerating, 1..5
+   spinning (in the air far more, hence the cap). The game's own trigger curves: braking 1.5..3, spin 0.7..1. */
+#define BRAKE_FULL 3.0f
+#define SPIN_FULL 2.5f
+static float slip_level(float slip, float from, float full)
+{
+    float t = clampf((slip - from) / (full > from + 0.5f ? full - from : 0.5f), 0, 1);
+    return t * t * (3 - 2 * t);
+}
+
+/* a gear change: a knock fading in 50 ms */
+static float shift_knock(double now)
+{
+    double t = now - Car.shiftAt;
+    return Car.shiftAt && t >= 0 && t < 0.15 ? expf(-(float)t / 0.05f) : 0;
+}
+
 /* ---------------------------------------------------------------------------------------------------------------- */
 /* HD haptics: the controller's audio endpoint (USB: 4 channels, 3 and 4 drive the left and right actuators)       */
 static volatile float g_hapAmp[2]; /* targets: low (left motor), high (right motor), 0..1 */
@@ -606,8 +626,7 @@ static DWORD WINAPI haptics_thread(void *arg)
                 engT = S.carFeel * 0.45f * (0.1f + 0.9f * rpm * rpm) * (0.4f + 0.6f * thr);
                 if (rpm >= 0.975f && thr > 0.5f)
                     engT = ((int)(now * 16) & 1) ? S.carFeel * 0.6f : S.carFeel * 0.05f;
-                if (now - Car.shiftAt < 0.07)
-                    knockT = S.carFeel * 0.7f;
+                knockT = S.carFeel * 0.55f * shift_knock(now);
                 /* the road's roughness: noise in the light motor's band */
                 rough = clampf(Car.bump * 1.5f, 0, 1) * 0.3f;
             } else
@@ -893,32 +912,34 @@ static void triggers_make(BYTE e[2][11], double now, const float game[2])
     throttle_resistance(e[1]);
     if (S.triggers != 2)
         return;
-    /* a crash: both jolt, by its strength */
-    if (S.crashJolt && now - Car.hitAt < 0.16) {
-        int a = 3 + (int)(Car.hit * 5 + 0.5f);
+    /* a crash: both jolt by its strength, fading (a scrape stays light) */
+    float hit = S.crashJolt ? car_hit(now) : 0;
+    if (hit > 0.12f) {
+        int a = 1 + (int)(hit * 6 + 0.5f);
         trig_vib(e[0], a, 20);
         trig_vib(e[1], a, 20);
         return;
     }
     /* a gear change: a knock on the trigger pressed (up on the throttle, down on the brake) */
-    int kick = S.gearKick && now - Car.shiftAt < 0.09 && (l2 > 24 || r2 > 24), kickL = kick && l2 > r2;
-    /* L2: from the grip limit the front tyres chatter (ABS at work); locking, the judder grows and speeds up */
+    float knock = S.gearKick && (l2 > 24 || r2 > 24) ? shift_knock(now) : 0;
+    int kickL = knock > 0.3f && l2 > r2, kickR = knock > 0.3f && !kickL;
+    /* L2: past the grip limit the front tyres chatter (ABS at work); locking, the judder grows and speeds up */
     float sb = Car.brake;
     if (kickL)
-        trig_vib(e[0], 8, 14);
-    else if (latch(&T.lockOn, &T.lockSince, sb, S.brakeFrom - 0.08f, S.brakeFrom, 0.08, now) && l2 > 10) {
-        float k = clampf((sb - S.brakeFrom) / 1.0f, 0, 1);
-        trig_vib(e[0], 3 + (int)(k * 5 + 0.5f), (int)(S.brakeHz * (1 + 0.6f * k) + 0.5f));
+        trig_vib(e[0], 2 + (int)(knock * 3 + 0.5f), 14);
+    else if (latch(&T.lockOn, &T.lockSince, sb, S.brakeFrom - 0.1f, S.brakeFrom, 0.1, now) && l2 > 10) {
+        float k = slip_level(sb, S.brakeFrom, BRAKE_FULL);
+        trig_vib(e[0], 2 + (int)(k * 5 + 0.5f), (int)(S.brakeHz * (1 + 0.5f * k) + 0.5f));
     }
     /* R2: wheel spin vibrates, harder and faster the more they spin; the rev limiter knocks */
     float sa = Car.spin;
-    if (kick && !kickL)
-        trig_vib(e[1], 8, 14);
+    if (kickR)
+        trig_vib(e[1], 2 + (int)(knock * 3 + 0.5f), 14);
     else if (latch(&T.spinOn, &T.spinSince, sa, S.spinFrom - 0.1f, S.spinFrom, 0.1, now) && r2 > 16) {
-        float k = clampf((sa - S.spinFrom) / 2.0f, 0, 1);
-        trig_vib(e[1], 2 + (int)(k * 6 + 0.5f), (int)(S.throttleHz * (1 + 0.5f * k) + 0.5f));
+        float k = slip_level(sa, S.spinFrom, SPIN_FULL);
+        trig_vib(e[1], 1 + (int)(k * 5 + 0.5f), (int)(S.throttleHz * (1 + 0.4f * k) + 0.5f));
     } else if (S.revLimiter && Car.rpm >= 0.975f && r2 > 140 && ((int)(now * 16) & 1))
-        trig_vib(e[1], 6, 30);
+        trig_vib(e[1], 4, 30);
 }
 
 static void send_output(Ds *d, int force)
@@ -941,10 +962,9 @@ static void send_output(Ds *d, int force)
     int emulate = S.haptics && !g_hapRunning;
     int driving = car_driving(now) && fh2_foreground();
     if (emulate && driving && S.carFeel > 0) { /* the car in the rumble: gear changes, the rev limiter */
-        if (now - Car.shiftAt < 0.08)
-            hi = hi > S.carFeel * 0.8f ? hi : S.carFeel * 0.8f;
+        hi = fmaxf(hi, S.carFeel * 0.5f * shift_knock(now));
         if (Car.rpm >= 0.975f && g_dsPad.bRightTrigger > 128 && ((int)(now * 16) & 1))
-            hi = hi > S.carFeel * 0.6f ? hi : S.carFeel * 0.6f;
+            hi = fmaxf(hi, S.carFeel * 0.4f);
     }
     if (emulate || T.emulated) { /* the emulation, or its last values cleared once the HD haptics take over */
         c[0] |= 0x02; /* haptics select: rumble emulation */

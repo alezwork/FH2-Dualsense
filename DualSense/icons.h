@@ -6,7 +6,7 @@
    At the game's first file open, its icon archives (ControllerIcons.zip, Help_Buttons.zip, UI_Symbols.zip for the
    controls screen drawing) are made again with every icon stored as RGBA in 1D tiling, in all looks with the same
    layout (and the same CRC: four spare bytes at the end of each picture), into mods\DualSense.cache\; UI.zip gets
-   the "Adaptive triggers" switch; zipmanifest.xml their new directories. The game is given those files.
+   the "Trigger feedback" switch; zipmanifest.xml their new directories. The game is given those files.
    The game reads its icons once and the engine uploads a texture again when its memory changes (it seals texture
    memory read-only and unseals it on a write), so a switch writes the other look over the icons in the game's
    memory, and into the files. Which look: the device that gave the last real input (DualSense, an Xbox pad, the
@@ -41,7 +41,7 @@ static ULONGLONG g_iconT0;
 static INIT_ONCE g_iconOnce = INIT_ONCE_STATIC_INIT;
 static WCHAR g_media[MAX_PATH]; /* <game folder>\Mount\media\ */
 static int g_langRu;
-static int g_uiAdaptive; /* the game knows AdaptiveTriggers (ui.h): its switch goes into the XAML */
+static int g_uiAdaptive; /* the game knows TriggerFeedback (ui.h): its switch goes into the XAML */
 
 typedef HANDLE(WINAPI *CreateFileWFn)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
 typedef DWORD(WINAPI *GetFileAttributesWFn)(LPCWSTR);
@@ -375,7 +375,8 @@ static char *str_replace1(const char *text, size_t len, const char *find, const 
     return out;
 }
 
-/* the controller settings get "Adaptive triggers", after the camera look-back switch */
+/* the controller settings get "Trigger feedback" (the DualSense's adaptive triggers, the Xbox controller's impulse
+   triggers), after the camera look-back switch */
 static char *xaml_switch(const char *text, size_t len, size_t *outLen)
 {
     static const char kAnchor[] = "SelectedIndex=\"{Binding InvertCameraLookBack}\"";
@@ -396,9 +397,9 @@ static char *xaml_switch(const char *text, size_t len, size_t *outLen)
     memcpy(indent, ls, il);
     indent[il] = 0;
     wsprintfA(add, "\r\n%s<local:SpinnerControl Style=\"{StaticResource A_Style_SpinnerControl_Default}\" Label=\"%s\" "
-                   "SelectedIndex=\"{Binding AdaptiveTriggers}\" ItemsSource=\"{Binding OnOffOptions}\"/>",
-              indent, g_langRu ? "\xD0\x90\xD0\x94\xD0\x90\xD0\x9F\xD0\xA2\xD0\x98\xD0\x92\xD0\x9D\xD0\xAB\xD0\x95 \xD0\x9A\xD0\xA3\xD0\xA0\xD0\x9A\xD0\x98"
-                               : "ADAPTIVE TRIGGERS");
+                   "SelectedIndex=\"{Binding TriggerFeedback}\" ItemsSource=\"{Binding OnOffOptions}\"/>",
+              indent, g_langRu ? "\xD0\x9E\xD0\xA2\xD0\x94\xD0\x90\xD0\xA7\xD0\x90 \xD0\x9A\xD0\xA3\xD0\xA0\xD0\x9A\xD0\x9E\xD0\x92"
+                               : "TRIGGER FEEDBACK");
     size_t al = strlen(add), pre = (size_t)(end - text);
     char *out = (char *)HeapAlloc(GetProcessHeap(), 0, len + al + 1);
     if (!out)
@@ -460,7 +461,7 @@ static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
                     q->d[s] = (BYTE *)t;
                 changed++;
             } else
-                fh2_say("icons: UI.zip: the controller settings are not as expected -- no Adaptive triggers switch");
+                fh2_say("icons: UI.zip: the controller settings are not as expected -- no Trigger feedback switch");
             if (raw)
                 HeapFree(GetProcessHeap(), 0, raw);
             continue;

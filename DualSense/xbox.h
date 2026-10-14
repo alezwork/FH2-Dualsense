@@ -6,7 +6,8 @@
      RT  wheel spin, stronger the more they spin; knocks on the rev limiter;
      a gear change kicks the trigger pressed, a crash both -- from the car's data (car.h), as the DualSense's triggers;
      without it the game's own Xbox One impulse trigger levels.
-   The same On/Off as the adaptive triggers (the game's controller settings); [ImpulseTriggers] in DualSense.ini.
+   On/Off with the DualSense's adaptive triggers: "Trigger feedback" in the game's controller settings;
+   [ImpulseTriggers] in DualSense.ini.
    Over USB and the Xbox Wireless Adapter; over Bluetooth only where Windows passes the trigger motors on.
    WinRT from C: the few interfaces needed are declared here by their vtables. */
 #pragma once
@@ -91,29 +92,32 @@ static void impulse_make(double now, float out[2])
         X.lockOn = X.spinOn = 0;
         return;
     }
-    if (S.crashJolt && now - Car.hitAt < 0.16) {
-        out[0] = out[1] = 0.45f + 0.55f * Car.hit;
+    /* a crash: both, by its strength, fading */
+    float hit = S.crashJolt ? car_hit(now) : 0;
+    if (hit > 0.08f) {
+        out[0] = out[1] = 0.7f * hit;
         return;
     }
-    int kick = S.gearKick && now - Car.shiftAt < 0.08 && (lt > 24 || rt > 24), kickL = kick && lt > rt;
-    /* LT: at the grip limit pulsing like ABS (12 Hz), a steady buzz growing as the wheels lock */
+    float knock = S.gearKick && (lt > 24 || rt > 24) ? shift_knock(now) : 0;
+    int kickL = knock > 0.05f && lt > rt;
+    /* LT: past the grip limit a soft ABS pulse (11 Hz), into a steady buzz growing as the wheels lock */
     float sb = Car.brake;
     if (kickL)
-        out[0] = 0.8f;
-    else if (latch(&X.lockOn, &X.lockSince, sb, S.brakeFrom - 0.08f, S.brakeFrom, 0.08, now) && lt > 10) {
-        float k = clampf((sb - S.brakeFrom) / 1.0f, 0, 1);
-        out[0] = 0.3f + 0.7f * k;
-        if (k < 0.5f && ((int)(now * 24) & 1))
-            out[0] *= 0.25f;
+        out[0] = 0.4f * knock;
+    else if (latch(&X.lockOn, &X.lockSince, sb, S.brakeFrom - 0.1f, S.brakeFrom, 0.1, now) && lt > 10) {
+        float k = slip_level(sb, S.brakeFrom, BRAKE_FULL);
+        out[0] = 0.12f + 0.6f * k;
+        if (k < 0.6f)
+            out[0] *= 0.65f + 0.35f * sinf((float)(now * 2 * 3.14159265 * 11));
     }
-    /* RT: wheel spin; the rev limiter knocks */
+    /* RT: wheel spin, growing; the rev limiter knocks */
     float sa = Car.spin;
-    if (kick && !kickL)
-        out[1] = 0.8f;
+    if (knock > 0.05f && !kickL)
+        out[1] = 0.4f * knock;
     else if (latch(&X.spinOn, &X.spinSince, sa, S.spinFrom - 0.1f, S.spinFrom, 0.1, now) && rt > 16)
-        out[1] = 0.25f + 0.75f * clampf((sa - S.spinFrom) / 2.0f, 0, 1);
-    else if (S.revLimiter && Car.rpm >= 0.975f && rt > 140 && ((int)(now * 16) & 1))
-        out[1] = 0.6f;
+        out[1] = 0.1f + 0.45f * slip_level(sa, S.spinFrom, SPIN_FULL);
+    else if (S.revLimiter && Car.rpm >= 0.975f && rt > 140)
+        out[1] = 0.4f * (0.5f + 0.5f * sinf((float)(now * 2 * 3.14159265 * 8)));
 }
 
 static DWORD WINAPI xbox_thread(void *arg)
@@ -128,7 +132,8 @@ static DWORD WINAPI xbox_thread(void *arg)
     WgiPad *pads[8];
     UINT npads = 0;
     void *cls = NULL;
-    double nextList = 0, lastSent = 0;
+    double nextList = 0, lastSent = 0, lastTick = 0;
+    float soft[2] = {0, 0};
     WgiVibration last = {-1, -1, -1, -1};
     (void)arg;
     if (!roInit || !roFactory || !hsNew || !hsDel) {
@@ -183,16 +188,20 @@ static DWORD WINAPI xbox_thread(void *arg)
         float lo = motor[0] / 65535.0f * S.strength, hi = motor[1] / 65535.0f * S.strength;
         int driving = car_driving(now) && fh2_foreground();
         if (driving && S.carFeel > 0) {
-            if (now - Car.shiftAt < 0.08)
-                hi = hi > S.carFeel * 0.8f ? hi : S.carFeel * 0.8f;
+            hi = fmaxf(hi, S.carFeel * 0.5f * shift_knock(now));
             if (Car.rpm >= 0.975f && g_xpadRT > 128 && ((int)(now * 16) & 1))
-                hi = hi > S.carFeel * 0.6f ? hi : S.carFeel * 0.6f;
+                hi = fmaxf(hi, S.carFeel * 0.4f);
         }
         impulse_make(now, trig);
+        /* the trigger motors without hard edges: up in 20 ms, down in 60 ms */
+        float dt = lastTick ? (float)(now - lastTick) : 0.01f;
+        lastTick = now;
+        for (int i = 0; i < 2; i++)
+            soft[i] = follow(soft[i], trig[i], dt > 0.1f ? 0.1f : dt, 0.02f, 0.06f);
         v.leftMotor = clampf(lo, 0, 1);
         v.rightMotor = clampf(hi, 0, 1);
-        v.leftTrigger = clampf(trig[0] * X_S.strength, 0, 1);
-        v.rightTrigger = clampf(trig[1] * X_S.strength, 0, 1);
+        v.leftTrigger = soft[0] < 0.01f ? 0 : clampf(soft[0] * X_S.strength, 0, 1);
+        v.rightTrigger = soft[1] < 0.01f ? 0 : clampf(soft[1] * X_S.strength, 0, 1);
         if (npads && (memcmp(&v, &last, sizeof v) || now - lastSent > 1.0)) {
             for (UINT i = 0; i < npads; i++)
                 pads[i]->v->put_Vibration(pads[i], v);
