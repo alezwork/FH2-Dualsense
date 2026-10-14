@@ -1,8 +1,10 @@
-/* DualSense.dll -- the PlayStation 5 controller (DualSense, DualSense Edge) in Forza Horizon 2 (and Fast & Furious),
-   a mod for Azimuth (Azimuth\mods\). USB or Bluetooth, no other software needed.
+/* DualSense.dll -- controllers for Forza Horizon 2 (and Fast & Furious) on Azimuth, one file in Azimuth\mods\:
+   the PlayStation 5 controller (DualSense, DualSense Edge; USB or Bluetooth, no other software needed), the Xbox
+   controller's impulse triggers (xbox.h), the keyboard (keyboard.h), the button icons that follow the device in use
+   with the PlayStation pictures inside (icons.h), the Adaptive triggers switch in the game's settings (ui.h).
 
-   What the game gets: the controller as its Xbox gamepad (XInput user 0, merged with any real pad -- the engine's
-   XInput table is ours, common\fh2mod.h).
+   What the game gets: the DualSense, the real pads and the keyboard as its one Xbox gamepad (XInput user 0 -- the
+   engine's XInput table is ours, common\fh2mod.h).
    What the controller gets from the game:
    - rumble: the game's two motors (engine revs, collisions, tyres: media\ControllerRumble.xml) -- as the DualSense's
      rumble emulation (USB/Bluetooth), or, on USB, as HD haptics: our own waveforms on the controller's two haptic
@@ -183,6 +185,11 @@ static volatile ULONGLONG g_dsInputAt, g_padInputAt; /* the last real use of the
 
 #include "ui.h"
 #include "car.h"
+#include "keyboard.h"
+static int g_kbBuiltin; /* the keyboard is ours (keyboard.h), not an old Keyboard.dll's */
+static volatile LONG g_xboxPads;         /* Xbox pads Windows.Gaming.Input drives now (xbox.h; 0: XInput rumbles them) */
+static volatile BYTE g_xpadLT, g_xpadRT; /* the real pads' triggers, last poll */
+static HANDLE g_xwake;
 
 static int used(const XINPUT_GAMEPAD *g)
 {
@@ -202,6 +209,7 @@ static DWORD WINAPI ds_get_state(DWORD user, XINPUT_STATE *st)
     int n = fh2_pads_get(&g_pads, &pads, &packet);
     if (n && used(&pads))
         g_padInputAt = GetTickCount64();
+    g_xpadLT = pads.bLeftTrigger, g_xpadRT = pads.bRightTrigger;
     AcquireSRWLockShared(&g_lock);
     int ds = g_connected;
     if (ds) {
@@ -209,7 +217,11 @@ static DWORD WINAPI ds_get_state(DWORD user, XINPUT_STATE *st)
         packet += g_dsPacket;
     }
     ReleaseSRWLockShared(&g_lock);
-    if (!n && !ds)
+    if (g_kbBuiltin) { /* the keyboard: always there */
+        XINPUT_GAMEPAD kb;
+        packet += kb_poll(&kb);
+        fh2_merge(&pads, &kb);
+    } else if (!n && !ds)
         return ERROR_DEVICE_NOT_CONNECTED;
     st->dwPacketNumber = packet;
     st->Gamepad = pads;
@@ -230,7 +242,10 @@ static DWORD WINAPI ds_set_state(DWORD user, XINPUT_VIBRATION *vib)
     InterlockedExchange(&g_outDirty, 1);
     if (g_wake)
         SetEvent(g_wake);
-    fh2_pads_set(&g_pads, vib);
+    if (g_xwake)
+        SetEvent(g_xwake);
+    if (!g_xboxPads) /* else Windows.Gaming.Input carries it, with the trigger motors (xbox.h) */
+        fh2_pads_set(&g_pads, vib);
     return ERROR_SUCCESS;
 }
 
@@ -1116,6 +1131,7 @@ static DWORD WINAPI controller_thread(void *arg)
     }
 }
 
+#include "xbox.h"
 #include "icons.h"
 
 static void install(void)
@@ -1124,10 +1140,7 @@ static void install(void)
     fh2_mod_open(L"DualSense");
     fh2_ini_default(kDefaultIni);
     load_settings();
-    if (!S.enabled) {
-        fh2_say("DualSense: switched off in DualSense.ini ([DualSense] Enabled=0)");
-        return;
-    }
+    g_kbBuiltin = kb_install();
     if (fh2_engine(&e)) {
         g_uiAdaptive = ui_install();
         if (S.triggers || S.carFeel > 0 || S.lightMode == 4 || S.revLights)
@@ -1149,8 +1162,13 @@ static void install(void)
     g_pads.set = (Fh2SetStateFn)table[2];
     InterlockedExchangePointer(&table[2], (void *)ds_set_state);
     InterlockedExchangePointer(&table[1], (void *)ds_get_state);
-    if (S.triggers == 2)
+    if (S.triggers == 2 || fh2_ini_int(L"ImpulseTriggers", L"Enabled", 1))
         g_origSetVibration = fh2_hook_set_vibration(&e, ds_set_vibration);
+    xbox_install();
+    if (!S.enabled) {
+        fh2_say("DualSense: the controller switched off ([DualSense] Enabled=0)");
+        return;
+    }
     g_wake = CreateEventW(NULL, FALSE, FALSE, NULL);
     HANDLE h = CreateThread(NULL, 0, controller_thread, NULL, 0, NULL);
     if (h)

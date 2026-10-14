@@ -1,14 +1,16 @@
 /* icons.h -- the game's button icons in three looks, switched to the controller in use:
      0 Xbox       the game's own pictures
-     1 PlayStation the pictures in mods\DualSense.icons (a zip of PNGs, made by tools\make_pack.py; editable)
-     2 keyboard   key caps drawn here from mods\Keyboard.ini (only when the Keyboard mod is there)
+     1 PlayStation the pictures of DualSense.icons (a zip of PNGs, made by tools\make_pack.py), inside this DLL;
+                  a mods\DualSense.icons of your own is taken instead
+     2 keyboard   key caps drawn here from the keys in [Keys] (keyboard.h)
    At the game's first file open, its icon archives (ControllerIcons.zip, Help_Buttons.zip, UI_Symbols.zip for the
    controls screen drawing) are made again with every icon stored as RGBA in 1D tiling, in all looks with the same
    layout (and the same CRC: four spare bytes at the end of each picture), into mods\DualSense.cache\; UI.zip gets
    the "Adaptive triggers" switch; zipmanifest.xml their new directories. The game is given those files.
-   The game reads its icons once and the engine uploads a texture again when its memory changes (GetWriteWatch), so
-   a switch writes the other look over the icons in the game's memory (found once, then remembered), and into the
-   files. Which look: the device that gave the last real input (DualSense, an Xbox pad, the keyboard). */
+   The game reads its icons once and the engine uploads a texture again when its memory changes (it seals texture
+   memory read-only and unseals it on a write), so a switch writes the other look over the icons in the game's
+   memory, and into the files. Which look: the device that gave the last real input (DualSense, an Xbox pad, the
+   keyboard). */
 #pragma once
 #include "inflate.h"
 #include "texture.h"
@@ -255,6 +257,7 @@ static BYTE *zip_build(const ZOut *o, int n, int set, DWORD *outLen, DWORD dir[3
 }
 
 /* ---- DualSense.icons ---- */
+#include "icons_pack.h" /* DualSense.icons inside the DLL (build.cmd: tools\bin2h.py) */
 static BYTE *g_pack;
 static DWORD g_packLen;
 static ZEnt *g_packEnt;
@@ -694,13 +697,18 @@ static BOOL CALLBACK ov_build(PINIT_ONCE once, PVOID param, PVOID *ctx)
         fh2_say("icons: the game folder is not in data\\azimuth.ini -- the game's own icons");
         return TRUE;
     }
+    /* the PlayStation pictures: a mods\\DualSense.icons of your own when there, else the ones inside this DLL */
     lstrcpyW(packPath, g_modDir);
     lstrcatW(packPath, L"DualSense.icons");
     g_pack = load_file(packPath, &g_packLen);
-    g_packN = g_pack ? zip_parse(g_pack, g_packLen, &g_packEnt) : -1;
+    if (g_pack)
+        fh2_say("icons: the PlayStation pictures from mods\\DualSense.icons");
+    else
+        g_pack = (BYTE *)kIconsPack, g_packLen = ICONS_PACK_LEN;
+    g_packN = g_packLen ? zip_parse(g_pack, g_packLen, &g_packEnt) : -1;
     if (g_packN < 0) {
         g_packN = 0;
-        fh2_say("icons: no mods\\DualSense.icons -- the PlayStation look is the Xbox one");
+        fh2_say("icons: no PlayStation pictures -- the PlayStation look is the Xbox one");
     }
     lstrcpyW(cache, g_modDir);
     lstrcatW(cache, L"DualSense.cache\\");
@@ -1217,7 +1225,7 @@ static void icons_switch(int set, const char *why)
     mem_switch(set);
 }
 
-/* the device of the last real input: the DualSense, an Xbox pad, or the keyboard (Keyboard.dll tells its own) */
+/* the device of the last real input: the DualSense, an Xbox pad, or the keyboard (ours, or an old Keyboard.dll's) */
 static DWORD WINAPI icons_thread(void *arg)
 {
     typedef ULONGLONG (*KbLastFn)(void);
@@ -1226,7 +1234,9 @@ static DWORD WINAPI icons_thread(void *arg)
     (void)arg;
     for (;;) {
         Sleep(150);
-        if (!kbLast) {
+        if (!kbLast && g_kbBuiltin)
+            kbLast = Fh2KeyboardLastInput;
+        else if (!kbLast) {
             HMODULE kb = GetModuleHandleW(L"Keyboard.dll");
             if (kb)
                 kbLast = (KbLastFn)GetProcAddress(kb, "Fh2KeyboardLastInput");
@@ -1263,10 +1273,14 @@ static void icons_install(Fh2Engine *e)
         fh2_say("icons: the game's own ([Icons] PlayStation=Off)");
         return;
     }
-    lstrcpyW(g_kbIni, g_modDir);
-    lstrcatW(g_kbIni, L"Keyboard.ini");
-    {
+    /* the keyboard's keys: ours ([Keys] in DualSense.ini), or an old Keyboard.dll's (Keyboard.ini) */
+    if (g_kbBuiltin) {
+        lstrcpyW(g_kbIni, g_modIni);
+        g_haveKb = 1;
+    } else {
         WCHAR kb[MAX_PATH];
+        lstrcpyW(g_kbIni, g_modDir);
+        lstrcatW(g_kbIni, L"Keyboard.ini");
         lstrcpyW(kb, g_modDir);
         lstrcatW(kb, L"Keyboard.dll");
         g_haveKb = GetFileAttributesW(kb) != INVALID_FILE_ATTRIBUTES;
@@ -1286,5 +1300,5 @@ static void icons_install(Fh2Engine *e)
         fh2_say("icons: the engine's CreateFileW import not found -- the game's own icons");
         return;
     }
-    fh2_say("icons: ready (keyboard look %s); the files are made when the game starts reading", g_haveKb ? "on" : "off: no Keyboard.dll");
+    fh2_say("icons: ready (keyboard look %s); the files are made when the game starts reading", g_haveKb ? "on" : "off: the keyboard is off");
 }
