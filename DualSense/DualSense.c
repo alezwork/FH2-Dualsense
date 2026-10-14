@@ -1152,7 +1152,6 @@ static DWORD WINAPI controller_thread(void *arg)
 }
 
 #include "xbox.h"
-#include "camera.h"
 #include "icons.h"
 
 static void install(void)
@@ -1162,7 +1161,6 @@ static void install(void)
     fh2_ini_default(kDefaultIni);
     load_settings();
     g_kbBuiltin = kb_install();
-    camera_load();
     if (fh2_engine(&e)) {
         g_uiAdaptive = ui_install();
         if (S.triggers || S.carFeel > 0 || S.lightMode == 4 || S.revLights)

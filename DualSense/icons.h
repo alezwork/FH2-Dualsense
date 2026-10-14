@@ -74,6 +74,29 @@ static BYTE *load_file(const WCHAR *path, DWORD *len)
     return p;
 }
 
+/* a game's file read through the hook below ours: what another mod hooked in before us made of it is the base
+   (CockpitCam.dll changes UI.zip and zipmanifest.xml too), and its changes stay */
+static BYTE *load_game_file(const WCHAR *path, DWORD *len)
+{
+    HANDLE h = (g_CreateFileW ? g_CreateFileW : CreateFileW)(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                                                             OPEN_EXISTING, 0, NULL);
+    BYTE *p = NULL;
+    DWORD n = 0;
+    *len = 0;
+    if (h == INVALID_HANDLE_VALUE)
+        return NULL;
+    *len = GetFileSize(h, NULL);
+    if (*len != INVALID_FILE_SIZE && (p = (BYTE *)HeapAlloc(GetProcessHeap(), 0, *len + 2)) != NULL &&
+        (!ReadFile(h, p, *len, &n, NULL) || n != *len)) {
+        HeapFree(GetProcessHeap(), 0, p);
+        p = NULL;
+    }
+    CloseHandle(h);
+    if (p)
+        p[*len] = p[*len + 1] = 0;
+    return p;
+}
+
 /* a look into the file the game gets: all of it, or only where the looks differ */
 static int write_set(IconFile *f, int set, int whole)
 {
@@ -419,21 +442,21 @@ static struct {
 static int g_nseen;
 
 static const char *const kArchives[] = {"ui\\textures\\data_bound\\ControllerIcons.zip", "ui\\textures\\data_bound\\Help_Buttons.zip",
-                                        "ui\\textures\\data_bound\\UI_Symbols.zip", "UI.zip", "Camera.zip"};
-#define NARCH 5
+                                        "ui\\textures\\data_bound\\UI_Symbols.zip", "UI.zip"};
+#define NARCH 4
 
 /* one archive: every look (or the XAML change), the file written, served as media\<rel> */
 static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
 {
     const char *rel = kArchives[which];
     WCHAR path[MAX_PATH], wrel[160];
-    if ((which <= 2 && !S.icons) || (which == 3 && !g_uiAdaptive) || (which == 4 && !Cam.on))
+    if ((which <= 2 && !S.icons) || (which == 3 && !g_uiAdaptive))
         return 0;
     DWORD len = 0;
     MultiByteToWideChar(CP_UTF8, 0, rel, -1, wrel, 160);
     lstrcpyW(path, g_media);
     lstrcatW(path, wrel);
-    BYTE *z = load_file(path, &len);
+    BYTE *z = load_game_file(path, &len);
     ZEnt *e = NULL;
     int n = z ? zip_parse(z, len, &e) : -1;
     if (n < 0) {
@@ -465,22 +488,6 @@ static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
                 changed++;
             } else
                 fh2_say("icons: UI.zip: the controller settings are not as expected -- no Trigger feedback switch");
-            if (raw)
-                HeapFree(GetProcessHeap(), 0, raw);
-            continue;
-        }
-        if (which == 4) { /* Camera.zip: the cockpit camera alive (camera.h) */
-            if (lstrcmpiA(e[k].name, "CameraPhysics.xml"))
-                continue;
-            BYTE *raw = zip_read(z, &e[k]);
-            size_t nl = 0;
-            char *t = raw ? camera_patch((char *)raw, e[k].usize, &nl) : NULL;
-            if (t) {
-                q->method = 0, q->usize = q->len = (DWORD)nl, q->crc = crc_update(0, (BYTE *)t, nl);
-                for (int s = 0; s < NSETS; s++)
-                    q->d[s] = (BYTE *)t;
-                changed++;
-            }
             if (raw)
                 HeapFree(GetProcessHeap(), 0, raw);
             continue;
@@ -651,7 +658,7 @@ static int ov_manifest(const WCHAR *cache, DWORD dirs[][3], const int *made)
     DWORD len = 0;
     lstrcpyW(path, g_media);
     lstrcatW(path, L"zipmanifest.xml");
-    char *t = (char *)load_file(path, &len);
+    char *t = (char *)load_game_file(path, &len);
     if (!t)
         return 0;
     size_t tl = len;
@@ -709,7 +716,7 @@ static BOOL CALLBACK ov_build(PINIT_ONCE once, PVOID param, PVOID *ctx)
 {
     WCHAR cache[MAX_PATH], packPath[MAX_PATH];
     DWORD dirs[NARCH][3];
-    int made[NARCH] = {0, 0, 0, 0, 0}, any = 0;
+    int made[NARCH] = {0, 0, 0, 0}, any = 0;
     (void)once, (void)param, (void)ctx;
     ULONGLONG t0 = GetTickCount64();
     crc_init();
@@ -1295,7 +1302,7 @@ static void icons_install(Fh2Engine *e)
     g_iconT0 = GetTickCount64();
     if (S.icons == 0)
         fh2_say("icons: the game's own ([Icons] PlayStation=Off)");
-    if (S.icons == 0 && !Cam.on && !g_uiAdaptive)
+    if (S.icons == 0 && !g_uiAdaptive)
         return;
     /* the keyboard's keys: ours ([Keys] in DualSense.ini), or an old Keyboard.dll's (Keyboard.ini) */
     if (g_kbBuiltin) {
