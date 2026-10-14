@@ -185,8 +185,9 @@ that part is left out. The addresses below are for Forza Horizon 2 1.0.0.64 and 
 - **Exports**: `Fh2IconLook()`, `Fh2SwitchIcons(int)`, `Fh2KeyboardLastInput()`.
 
 ## See also
-- **CockpitCam** (a separate mod): the living cockpit camera -- the driver's head looks into turns, leans
-  with the g-forces, dips under braking. It works together with this one.
+- [**FH2-LivingCockpit**](https://github.com/alezwork/FH2-LivingCockpit) (a separate mod): a living cockpit --
+  the driver's head looks into turns, leans with the g-forces, dips under braking; the feel of speed; a switch for the
+  game's motion blur. It works together with this one.
 
 ## Credits
 - DualSense report layouts: the Linux kernel's `hid-playstation` driver.

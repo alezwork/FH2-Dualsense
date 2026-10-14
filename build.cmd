@@ -17,6 +17,7 @@ python -I tools\ini2h.py DualSense\DualSense.ini DualSense\ini_default.h || exit
 rem the PlayStation pictures, drawn in the sizes of the game's own (needs the game and tools\xg\kernelx.dll)
 if exist "%B%\DualSense.icons" del "%B%\DualSense.icons"
 if not exist tools\xg\kernelx.dll call tools\xg\build.cmd
+cd /d "%~dp0"
 python -I tools\make_pack.py "%B%\DualSense.icons" "%~dp0..\Forza Horizon 2\Mount" "%~dp0..\Forza Horizon 2" || echo no PlayStation pictures made: the DLL gets none of its own
 python -I tools\bin2h.py "%B%\DualSense.icons" DualSense\icons_pack.h || exit /b 1
 

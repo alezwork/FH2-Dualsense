@@ -75,7 +75,7 @@ static BYTE *load_file(const WCHAR *path, DWORD *len)
 }
 
 /* a game's file read through the hook below ours: what another mod hooked in before us made of it is the base
-   (CockpitCam.dll changes UI.zip and zipmanifest.xml too), and its changes stay */
+   (LivingCockpit.dll changes UI.zip and zipmanifest.xml too), and its changes stay */
 static BYTE *load_game_file(const WCHAR *path, DWORD *len)
 {
     HANDLE h = (g_CreateFileW ? g_CreateFileW : CreateFileW)(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
