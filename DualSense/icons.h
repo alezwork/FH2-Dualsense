@@ -419,13 +419,16 @@ static struct {
 static int g_nseen;
 
 static const char *const kArchives[] = {"ui\\textures\\data_bound\\ControllerIcons.zip", "ui\\textures\\data_bound\\Help_Buttons.zip",
-                                        "ui\\textures\\data_bound\\UI_Symbols.zip", "UI.zip"};
+                                        "ui\\textures\\data_bound\\UI_Symbols.zip", "UI.zip", "Camera.zip"};
+#define NARCH 5
 
 /* one archive: every look (or the XAML change), the file written, served as media\<rel> */
 static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
 {
     const char *rel = kArchives[which];
     WCHAR path[MAX_PATH], wrel[160];
+    if ((which <= 2 && !S.icons) || (which == 3 && !g_uiAdaptive) || (which == 4 && !Cam.on))
+        return 0;
     DWORD len = 0;
     MultiByteToWideChar(CP_UTF8, 0, rel, -1, wrel, 160);
     lstrcpyW(path, g_media);
@@ -462,6 +465,22 @@ static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
                 changed++;
             } else
                 fh2_say("icons: UI.zip: the controller settings are not as expected -- no Trigger feedback switch");
+            if (raw)
+                HeapFree(GetProcessHeap(), 0, raw);
+            continue;
+        }
+        if (which == 4) { /* Camera.zip: the cockpit camera alive (camera.h) */
+            if (lstrcmpiA(e[k].name, "CameraPhysics.xml"))
+                continue;
+            BYTE *raw = zip_read(z, &e[k]);
+            size_t nl = 0;
+            char *t = raw ? camera_patch((char *)raw, e[k].usize, &nl) : NULL;
+            if (t) {
+                q->method = 0, q->usize = q->len = (DWORD)nl, q->crc = crc_update(0, (BYTE *)t, nl);
+                for (int s = 0; s < NSETS; s++)
+                    q->d[s] = (BYTE *)t;
+                changed++;
+            }
             if (raw)
                 HeapFree(GetProcessHeap(), 0, raw);
             continue;
@@ -554,7 +573,7 @@ static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
     }
     DWORD l[NSETS], d[NSETS][3];
     BYTE *s[NSETS] = {NULL, NULL, NULL};
-    for (int k = 0; k < NSETS && (which != 3 || changed); k++)
+    for (int k = 0; k < NSETS && (which < 3 || changed); k++)
         s[k] = zip_build(o, n, k, &l[k], d[k]);
     /* the pictures made for it are in the archives now: freed (no stray copies of them for the memory search) */
     for (int k = 0; k < n; k++)
@@ -568,7 +587,7 @@ static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
         }
     HeapFree(GetProcessHeap(), 0, o);
     HeapFree(GetProcessHeap(), 0, z);
-    if (which == 3 && !changed) {
+    if (which >= 3 && !changed) {
         HeapFree(GetProcessHeap(), 0, e);
         return 0;
     }
@@ -620,7 +639,7 @@ static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
             return 0;
     }
     g_icons++;
-    fh2_say("icons: %s: %d pictures in every look, %d XAML changes, %lu bytes", rel, looks, changed, l[0]);
+    fh2_say("icons: %s: %d pictures in every look, %d files changed, %lu bytes", rel, looks, changed, l[0]);
     HeapFree(GetProcessHeap(), 0, e);
     return 1;
 }
@@ -638,7 +657,7 @@ static int ov_manifest(const WCHAR *cache, DWORD dirs[][3], const int *made)
     size_t tl = len;
     char *text = (char *)HeapAlloc(GetProcessHeap(), 0, len + 1024);
     memcpy(text, t, len + 1);
-    for (int a = 0; a < 4; a++) {
+    for (int a = 0; a < NARCH; a++) {
         if (!made[a])
             continue;
         char key[200], low[160];
@@ -689,8 +708,8 @@ static DWORD WINAPI icons_thread(void *arg);
 static BOOL CALLBACK ov_build(PINIT_ONCE once, PVOID param, PVOID *ctx)
 {
     WCHAR cache[MAX_PATH], packPath[MAX_PATH];
-    DWORD dirs[4][3];
-    int made[4] = {0, 0, 0, 0};
+    DWORD dirs[NARCH][3];
+    int made[NARCH] = {0, 0, 0, 0, 0}, any = 0;
     (void)once, (void)param, (void)ctx;
     ULONGLONG t0 = GetTickCount64();
     crc_init();
@@ -698,29 +717,33 @@ static BOOL CALLBACK ov_build(PINIT_ONCE once, PVOID param, PVOID *ctx)
         fh2_say("icons: the game folder is not in data\\azimuth.ini -- the game's own icons");
         return TRUE;
     }
-    /* the PlayStation pictures: a mods\\DualSense.icons of your own when there, else the ones inside this DLL */
-    lstrcpyW(packPath, g_modDir);
-    lstrcatW(packPath, L"DualSense.icons");
-    g_pack = load_file(packPath, &g_packLen);
-    if (g_pack)
-        fh2_say("icons: the PlayStation pictures from mods\\DualSense.icons");
-    else
-        g_pack = (BYTE *)kIconsPack, g_packLen = ICONS_PACK_LEN;
-    g_packN = g_packLen ? zip_parse(g_pack, g_packLen, &g_packEnt) : -1;
-    if (g_packN < 0) {
-        g_packN = 0;
-        fh2_say("icons: no PlayStation pictures -- the PlayStation look is the Xbox one");
+    /* the PlayStation pictures: a mods\DualSense.icons of your own when there, else the ones inside this DLL */
+    if (S.icons) {
+        lstrcpyW(packPath, g_modDir);
+        lstrcatW(packPath, L"DualSense.icons");
+        g_pack = load_file(packPath, &g_packLen);
+        if (g_pack)
+            fh2_say("icons: the PlayStation pictures from mods\\DualSense.icons");
+        else
+            g_pack = (BYTE *)kIconsPack, g_packLen = ICONS_PACK_LEN;
+        g_packN = g_packLen ? zip_parse(g_pack, g_packLen, &g_packEnt) : -1;
+        if (g_packN < 0) {
+            g_packN = 0;
+            fh2_say("icons: no PlayStation pictures -- the PlayStation look is the Xbox one");
+        }
     }
     lstrcpyW(cache, g_modDir);
     lstrcatW(cache, L"DualSense.cache\\");
     CreateDirectoryW(cache, NULL);
-    for (int a = 0; a < 4; a++)
-        made[a] = ov_archive(a, cache, dirs[a]);
-    if ((made[0] || made[1] || made[2] || made[3]) && !ov_manifest(cache, dirs, made)) {
+    for (int a = 0; a < NARCH; a++)
+        any |= made[a] = ov_archive(a, cache, dirs[a]);
+    if (any && !ov_manifest(cache, dirs, made)) {
         fh2_say("icons: zipmanifest.xml could not be changed -- the game's own files");
         g_icons = 0;
         return TRUE;
     }
+    if (!S.icons)
+        return TRUE;
     InterlockedExchange(&g_iconSet, g_iconStart);
     fh2_say("icons: made in %.2f s; %s look to start%s", (GetTickCount64() - t0) / 1000.0, kSetName[g_iconStart],
             S.icons == 2 ? ", then the look of the controller in use" : "");
@@ -1270,10 +1293,10 @@ __declspec(dllexport) void Fh2SwitchIcons(int look)
 static void icons_install(Fh2Engine *e)
 {
     g_iconT0 = GetTickCount64();
-    if (S.icons == 0) {
+    if (S.icons == 0)
         fh2_say("icons: the game's own ([Icons] PlayStation=Off)");
+    if (S.icons == 0 && !Cam.on && !g_uiAdaptive)
         return;
-    }
     /* the keyboard's keys: ours ([Keys] in DualSense.ini), or an old Keyboard.dll's (Keyboard.ini) */
     if (g_kbBuiltin) {
         lstrcpyW(g_kbIni, g_modIni);

@@ -2,7 +2,7 @@
 
 **Controllers for Forza Horizon 2 (Xbox One) on the Azimuth 0.9.7 emulator, in one DLL:** the PlayStation 5
 DualSense with HD haptics and adaptive triggers driven by the car itself, the **Xbox controller's impulse triggers**,
-the keyboard, and button icons that follow the device you are using. Drop it in: no drivers, no Steam Input,
+the keyboard, button icons that follow the device you are using, and a cockpit camera that comes alive. Drop it in: no drivers, no Steam Input,
 no DS4Windows.
 
 [Русская версия](README.ru.md)
@@ -56,6 +56,12 @@ There is a **Trigger Feedback On/Off switch in the game's own controller setting
 switches the DualSense's adaptive triggers and the Xbox impulse triggers together and is saved to `DualSense.ini`.
 If the game build differs and the car data is not found, both fall back to the game's Xbox One impulse trigger levels.
 
+### Living cockpit camera
+The driver's head reacts to the car: it **looks into turns**, leans and is pushed to the outside by the sideways
+g-forces, **dips forward under braking** and sinks back under throttle, rides the bumps and kerbs, and shakes a
+little at speed. It is the game's own camera physics (which has these effects, mostly switched off or very light in
+the cockpit) retuned; every effect has its strength in `[Camera]`.
+
 ### Keyboard
 The keyboard is a gamepad too, with smooth steering and pedals; every key can be changed in `DualSense.ini`.
 
@@ -108,6 +114,7 @@ Every setting is explained in the file itself. In short:
 | `[ImpulseTriggers]` | The Xbox controller's impulse triggers: `Enabled`, `Strength`. |
 | `[Lightbar]` | `Mode`, `Color`, `FlashColor`, `Brightness`, `LowBatteryBlink`, `RevLights`. |
 | `[Icons]` | `PlayStation` = Auto (follow the device) / On (always PlayStation) / Off (the game's own). |
+| `[Camera]` | `Dynamic` (the living cockpit camera on/off), `LookIntoTurns` (degrees at 1 g sideways; negative if it looks the wrong way), `Lean`, `Pitch`, `Bumps`, `Shake`. |
 | `[Gyro]` | `Steering` = Toggle (mic button) / On / Off, `MaxAngle`, `Invert`. |
 | `[Keyboard]` | The keyboard on/off, only while the game is in front, steering and pedal speeds. |
 | `[Keys]` | The keys for every control (up to 4 each). |
@@ -182,6 +189,10 @@ that part is left out. The addresses below are for Forza Horizon 2 1.0.0.64 and 
 - **Live icon switch**: Azimuth seals texture memory nobody writes to (read-only) and uploads it again when written.
   The mod finds the icons in memory and writes the wanted look over them; the engine's exception handler unseals the
   pages and sends the textures to the GPU again.
+- **The cockpit camera**: `Camera.zip` is made again at the game's start with the driver camera's layers of
+  `CameraPhysics.xml` (input -> curve -> noise -> spring -> offset/rotation) changed: the sideways g-force layers,
+  which were off, look into turns, roll and sway; the braking/throttle and bump layers are scaled; the speed shake is
+  on. Each layer is checked by its input first.
 - **Exports**: `Fh2IconLook()`, `Fh2SwitchIcons(int)`, `Fh2KeyboardLastInput()`.
 
 ## Credits
