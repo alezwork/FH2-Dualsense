@@ -100,6 +100,11 @@ Made and tested for Forza Horizon 2. Forza Horizon 2 Presents Fast & Furious use
 **From 1.0**: delete `Keyboard.dll` and `DualSense.icons` from `mods\`. Your `Keyboard.ini` settings are taken
 into `DualSense.ini` on the first start.
 
+**With ExtraOptions' Autodrive**: it starts and stops on a D-pad Down press (or F2), and that is any of the mod's
+D-pad Downs too: the DualSense's D-pad, a downward swipe on its touchpad, the keyboard's Down key. Steering, throttle
+or braking takes control back -- and so does tilting the DualSense with gyro steering on: switch the gyro off (mic
+button) before letting it drive.
+
 **Remove**: delete `DualSense.dll` (and `DualSense.ini`, `DualSense.log`, `DualSense.cache\`) from `mods\` and rename
 `azimuth-tls.dll.original` back.
 
