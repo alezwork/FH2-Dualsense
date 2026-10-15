@@ -117,6 +117,40 @@ static void fh2_ini_str(const WCHAR *sec, const WCHAR *key, const WCHAR *def, WC
         out[k - 1] = 0;
 }
 
+/* the game's folder (<it>\Mount\media\ has its files) and the language asked for, from the engine's data\azimuth.ini
+   (UTF-16): Azimuth 0.9.9 keeps the game's folder in its title's section ([launcher] game=<id>, [title-<id>]
+   folder=), 0.9.5..0.9.7 in [launcher] game_folder=; a relative folder is from the engine's. lang: "" for the
+   system's. 0: not there. */
+static int fh2_game_folder(WCHAR folder[MAX_PATH], WCHAR *lang, DWORD langLen)
+{
+    WCHAR dir[MAX_PATH], ini[MAX_PATH], id[32], sec[48], f[MAX_PATH];
+    DWORD n = GetModuleFileNameW(NULL, dir, MAX_PATH);
+    while (n && dir[n - 1] != '\\' && dir[n - 1] != '/')
+        n--;
+    dir[n] = 0;
+    if (n + 20 >= MAX_PATH)
+        return 0;
+    lstrcpyW(ini, dir);
+    lstrcatW(ini, L"data\\azimuth.ini");
+    GetPrivateProfileStringW(L"launcher", L"game", L"1a96545b", id, 32, ini); /* Forza Horizon 2's id */
+    lstrcpyW(sec, L"title-");
+    lstrcatW(sec, id);
+    if (!GetPrivateProfileStringW(sec, L"folder", L"", f, MAX_PATH, ini) &&
+        !GetPrivateProfileStringW(L"launcher", L"game_folder", L"", f, MAX_PATH, ini))
+        return 0;
+    if (lang)
+        GetPrivateProfileStringW(L"launcher", L"language", L"", lang, langLen, ini);
+    if (!(f[1] == ':' || (f[0] == '\\' && f[1] == '\\'))) {
+        if (lstrlenW(dir) + lstrlenW(f) >= MAX_PATH)
+            return 0;
+        lstrcpyW(ini, dir);
+        lstrcatW(ini, f);
+        lstrcpyW(f, ini);
+    }
+    n = GetFullPathNameW(f, MAX_PATH, folder, NULL);
+    return n && n < MAX_PATH - 20;
+}
+
 /* a number with a fraction ("3.5"); def when missing */
 static float fh2_ini_float(const WCHAR *sec, const WCHAR *key, float def)
 {

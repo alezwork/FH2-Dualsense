@@ -32,7 +32,7 @@ typedef struct {
     HANDLE handle[4];
     volatile LONG reads;
 } IconFile;
-static IconFile g_icon[8];
+static IconFile g_icon[32]; /* the icon archives, UI.zip, every language's string table, the manifest */
 static int g_icons;
 static SRWLOCK g_iconLock = SRWLOCK_INIT;
 static volatile LONG g_iconSet = -1; /* the look in the game: 0 Xbox, 1 PlayStation, 2 keyboard */
@@ -42,6 +42,7 @@ static INIT_ONCE g_iconOnce = INIT_ONCE_STATIC_INIT;
 static WCHAR g_media[MAX_PATH]; /* <game folder>\Mount\media\ */
 static int g_langRu;
 static int g_uiAdaptive; /* the game knows TriggerFeedback (ui.h): its switch goes into the XAML */
+static int g_locSeen, g_locFail, g_locOk; /* the switch's name in the string tables: tables read, not as expected, all */
 
 typedef HANDLE(WINAPI *CreateFileWFn)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
 typedef DWORD(WINAPI *GetFileAttributesWFn)(LPCWSTR);
@@ -122,45 +123,12 @@ static int write_set(IconFile *f, int set, int whole)
 /* ================================================================================================================ */
 /* making the files                                                                                                 */
 
-/* the engine's data\azimuth.ini (UTF-16): game_folder (relative to the engine), language */
+/* the game's media folder and the language, from the engine's data\azimuth.ini (fh2_game_folder) */
 static int ov_find_game(void)
 {
-    WCHAR ini[MAX_PATH], dir[MAX_PATH], folder[MAX_PATH] = L"", lang[32] = L"";
-    DWORD n = GetModuleFileNameW(NULL, dir, MAX_PATH), len = 0;
-    while (n && dir[n - 1] != '\\' && dir[n - 1] != '/')
-        n--;
-    dir[n] = 0;
-    lstrcpyW(ini, dir);
-    lstrcatW(ini, L"data\\azimuth.ini");
-    WCHAR *text = (WCHAR *)load_file(ini, &len);
-    if (!text)
-        return 0;
-    text[len / 2] = 0;
-    for (WCHAR *p = text; *p;) {
-        WCHAR *e = p;
-        while (*e && *e != '\n' && *e != '\r')
-            e++;
-        WCHAR save = *e;
-        *e = 0;
-        if (*p == 0xFEFF)
-            p++;
-        if (!folder[0] && CompareStringOrdinal(p, 12, L"game_folder=", 12, TRUE) == CSTR_EQUAL)
-            lstrcpynW(folder, p + 12, MAX_PATH);
-        if (!lang[0] && CompareStringOrdinal(p, 9, L"language=", 9, TRUE) == CSTR_EQUAL)
-            lstrcpynW(lang, p + 9, 32);
-        *e = save;
-        p = *e ? e + 1 : e;
-    }
-    HeapFree(GetProcessHeap(), 0, text);
-    if (!folder[0])
-        return 0;
-    if (folder[1] == ':' || (folder[0] == '\\' && folder[1] == '\\'))
-        lstrcpyW(ini, folder);
-    else {
-        lstrcpyW(ini, dir);
-        lstrcatW(ini, folder);
-    }
-    if (!GetFullPathNameW(ini, MAX_PATH, g_media, NULL))
+    WCHAR lang[32] = L"";
+    DWORD n;
+    if (!fh2_game_folder(g_media, lang, 32))
         return 0;
     n = lstrlenW(g_media);
     if (n && g_media[n - 1] != '\\')
@@ -419,10 +387,12 @@ static char *xaml_switch(const char *text, size_t len, size_t *outLen)
     int il = (int)(start - ls) < 63 ? (int)(start - ls) : 63;
     memcpy(indent, ls, il);
     indent[il] = 0;
+    /* named from the string tables when every language has the key (ov_build), else in Russian or English */
     wsprintfA(add, "\r\n%s<local:SpinnerControl Style=\"{StaticResource A_Style_SpinnerControl_Default}\" Label=\"%s\" "
                    "SelectedIndex=\"{Binding TriggerFeedback}\" ItemsSource=\"{Binding OnOffOptions}\"/>",
-              indent, g_langRu ? "\xD0\x9E\xD0\xA2\xD0\x94\xD0\x90\xD0\xA7\xD0\x90 \xD0\x9A\xD0\xA3\xD0\xA0\xD0\x9A\xD0\x9E\xD0\x92"
-                               : "TRIGGER FEEDBACK");
+              indent, g_locOk ? "{local:Loc MyProfile.IDS_Option_TriggerFeedback}"
+                      : g_langRu ? "\xD0\x9E\xD0\xA2\xD0\x94\xD0\x90\xD0\xA7\xD0\x90 \xD0\x9A\xD0\xA3\xD0\xA0\xD0\x9A\xD0\x9E\xD0\x92"
+                                 : "TRIGGER FEEDBACK");
     size_t al = strlen(add), pre = (size_t)(end - text);
     char *out = (char *)HeapAlloc(GetProcessHeap(), 0, len + al + 1);
     if (!out)
@@ -441,16 +411,38 @@ static struct {
 } g_seen[1024];
 static int g_nseen;
 
+/* the switch's name in every language (strtab.h's order), MyProfile.IDS_Option_TriggerFeedback: cz, HU, DEV and LOC
+   English, as the game's own text there */
+#include "strtab.h"
+static const char *const kTfKey[1] = {"IDS_Option_TriggerFeedback"};
+static const char *const kTfLabel[][1] = {
+    {"Trigger Feedback"},     {"Trigger Feedback"},       {"Trigger-Feedback"},  {"Retour des gâchettes"},
+    {"Feedback grilletti"},   {"Respuesta de gatillos"},  {"Respuesta de gatillos"}, {"Resposta dos gatilhos"},
+    {"Reakcja spustów"},      {"Triggerfeedback"},        {"Отдача курков"},     {"トリガー フィードバック"},
+    {"트리거 피드백"},        {"扳機回饋"},               {"Trigger Feedback"},  {"Trigger Feedback"},
+    {"Trigger Feedback"},     {"Trigger Feedback"}};
+
 static const char *const kArchives[] = {"ui\\textures\\data_bound\\ControllerIcons.zip", "ui\\textures\\data_bound\\Help_Buttons.zip",
-                                        "ui\\textures\\data_bound\\UI_Symbols.zip", "UI.zip"};
-#define NARCH 4
+                                        "ui\\textures\\data_bound\\UI_Symbols.zip", "UI.zip",
+                                        /* the string tables, strtab.h's order: MyProfile.str gets the switch's name */
+                                        "stripped\\stringtables\\EN.zip", "stripped\\stringtables\\GB.zip",
+                                        "stripped\\stringtables\\DE.zip", "stripped\\stringtables\\FR.zip",
+                                        "stripped\\stringtables\\IT.zip", "stripped\\stringtables\\ES.zip",
+                                        "stripped\\stringtables\\MX.zip", "stripped\\stringtables\\br.zip",
+                                        "stripped\\stringtables\\PL.zip", "stripped\\stringtables\\nl.zip",
+                                        "stripped\\stringtables\\RU.zip", "stripped\\stringtables\\JP.zip",
+                                        "stripped\\stringtables\\KO.zip", "stripped\\stringtables\\CHT.zip",
+                                        "stripped\\stringtables\\cz.zip", "stripped\\stringtables\\HU.zip",
+                                        "stripped\\stringtables\\DEV.zip", "stripped\\stringtables\\LOC.zip"};
+#define NARCH 22
+#define ARCH_STR 4 /* the first string table */
 
 /* one archive: every look (or the XAML change), the file written, served as media\<rel> */
 static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
 {
     const char *rel = kArchives[which];
     WCHAR path[MAX_PATH], wrel[160];
-    if ((which <= 2 && !S.icons) || (which == 3 && !g_uiAdaptive))
+    if ((which <= 2 && !S.icons) || (which >= 3 && !g_uiAdaptive))
         return 0;
     DWORD len = 0;
     MultiByteToWideChar(CP_UTF8, 0, rel, -1, wrel, 160);
@@ -475,6 +467,28 @@ static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
         q->name = e[k].name, q->method = e[k].method, q->crc = e[k].crc, q->usize = e[k].usize, q->len = e[k].csize;
         for (int s = 0; s < NSETS; s++)
             q->d[s] = z + e[k].dataOff;
+        if (which >= ARCH_STR) { /* a string table: the switch's name in its language */
+            if (lstrcmpiA(e[k].name, "MyProfile.str"))
+                continue;
+            BYTE *raw = zip_read(z, &e[k]);
+            size_t nl = 0;
+            int added = -1;
+            char *t = raw ? loc_add((char *)raw, e[k].usize, &nl, kTfKey, kTfLabel[which - ARCH_STR], 1, &added) : NULL;
+            g_locSeen++;
+            if (added < 0) {
+                g_locFail++;
+                fh2_say("icons: %s: the string table is not as expected -- the switch's name in one language", rel);
+            }
+            if (t) {
+                q->method = 0, q->usize = q->len = (DWORD)nl, q->crc = crc_update(0, (BYTE *)t, nl);
+                for (int s = 0; s < NSETS; s++)
+                    q->d[s] = (BYTE *)t;
+                changed++;
+            }
+            if (raw)
+                HeapFree(GetProcessHeap(), 0, raw);
+            continue;
+        }
         if (which == 3) { /* UI.zip: the switch in the controller settings */
             if (!g_uiAdaptive || lstrcmpiA(e[k].name, "Scenes/Anthem/A_ControllerOptions.xaml"))
                 continue;
@@ -646,7 +660,8 @@ static int ov_archive(int which, const WCHAR *cache, DWORD dirOut[3])
             return 0;
     }
     g_icons++;
-    fh2_say("icons: %s: %d pictures in every look, %d files changed, %lu bytes", rel, looks, changed, l[0]);
+    if (which < ARCH_STR)
+        fh2_say("icons: %s: %d pictures in every look, %d files changed, %lu bytes", rel, looks, changed, l[0]);
     HeapFree(GetProcessHeap(), 0, e);
     return 1;
 }
@@ -716,7 +731,7 @@ static BOOL CALLBACK ov_build(PINIT_ONCE once, PVOID param, PVOID *ctx)
 {
     WCHAR cache[MAX_PATH], packPath[MAX_PATH];
     DWORD dirs[NARCH][3];
-    int made[NARCH] = {0, 0, 0, 0}, any = 0;
+    int made[NARCH], any = 0, tables = 0;
     (void)once, (void)param, (void)ctx;
     ULONGLONG t0 = GetTickCount64();
     crc_init();
@@ -742,7 +757,16 @@ static BOOL CALLBACK ov_build(PINIT_ONCE once, PVOID param, PVOID *ctx)
     lstrcpyW(cache, g_modDir);
     lstrcatW(cache, L"DualSense.cache\\");
     CreateDirectoryW(cache, NULL);
-    for (int a = 0; a < NARCH; a++)
+    ZeroMemory(made, sizeof made);
+    /* the switch's name in every language first: the controller settings say it by key only when every table has it */
+    for (int a = ARCH_STR; a < NARCH; a++)
+        tables += made[a] = ov_archive(a, cache, dirs[a]);
+    g_locOk = g_uiAdaptive && g_locSeen == NARCH - ARCH_STR && !g_locFail;
+    if (g_uiAdaptive)
+        fh2_say("icons: the Trigger feedback switch's name in %d of %d languages' string tables", g_locSeen - g_locFail,
+                NARCH - ARCH_STR);
+    any = tables > 0;
+    for (int a = 0; a < ARCH_STR; a++)
         any |= made[a] = ov_archive(a, cache, dirs[a]);
     if (any && !ov_manifest(cache, dirs, made)) {
         fh2_say("icons: zipmanifest.xml could not be changed -- the game's own files");
@@ -832,7 +856,8 @@ static HANDLE WINAPI hk_CreateFileW(LPCWSTR name, DWORD access, DWORD share, LPS
                 f->handle[k] = h;
                 break;
             }
-    fh2_say("icons: the game opened %ls (%.1f s)", f->suffix, (GetTickCount64() - g_iconT0) / 1000.0);
+    if (CompareStringOrdinal(f->suffix, 15, L"media\\stripped\\", 15, TRUE) != CSTR_EQUAL) /* not the string tables */
+        fh2_say("icons: the game opened %ls (%.1f s)", f->suffix, (GetTickCount64() - g_iconT0) / 1000.0);
     return h;
 }
 

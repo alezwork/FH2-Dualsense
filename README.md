@@ -1,6 +1,6 @@
 # FH2-DualSense
 
-**Controllers for Forza Horizon 2 (Xbox One) on the Azimuth 0.9.7 emulator, in one DLL:** the PlayStation 5
+**Controllers for Forza Horizon 2 (Xbox One) on the Azimuth emulator (0.9.9; 0.9.5–0.9.7 too), in one DLL:** the PlayStation 5
 DualSense with HD haptics and adaptive triggers driven by the car itself, the **Xbox controller's impulse triggers**,
 the keyboard, and button icons that follow the device you are using. Drop it in: no drivers, no Steam Input,
 no DS4Windows.
@@ -52,8 +52,9 @@ which plain XInput on a PC cannot reach. The mod drives them through Windows.Gam
 The pad's two big motors get the game's rumble as before (plus the gear changes and the rev limiter). Works over USB
 and the Xbox Wireless Adapter; over Bluetooth only where Windows passes the trigger motors on.
 
-There is a **Trigger Feedback On/Off switch in the game's own controller settings** (Settings > Controls); it
-switches the DualSense's adaptive triggers and the Xbox impulse triggers together and is saved to `DualSense.ini`.
+There is a **Trigger Feedback On/Off switch in the game's own controller settings** (Settings > Controls), named
+in every language of the game; it switches the DualSense's adaptive triggers and the Xbox impulse triggers together
+and is saved to `DualSense.ini`.
 If the game build differs and the car data is not found, both fall back to the game's Xbox One impulse trigger levels.
 
 ### Keyboard
@@ -77,15 +78,20 @@ The keyboard is a gamepad too, with smooth steering and pedals; every key can be
 
 ## Requirements
 - Windows 10 or 11, x64.
-- Forza Horizon 2 for Xbox One (1.0.0.64) running on **Azimuth 0.9.7**. Neither is included; use your own copy.
+- Forza Horizon 2 for Xbox One (1.0.0.64) running on **Azimuth 0.9.9** (0.9.5–0.9.7 work too). Neither is included;
+  use your own copy.
 - The mod loader from the release (`azimuth-tls.dll`), or any loader that loads `mods\*.dll` once the game is mapped.
+  It works together with [ExtraOptions](https://github.com/RokkuDayo/ForzaHorizon2_ExtraOptions).
 
 Made and tested for Forza Horizon 2. Forza Horizon 2 Presents Fast & Furious uses the same engine but is not tested.
 
 ## Installation
 1. Download `DualSense.dll` and `azimuth-tls.dll` from [Releases](../../releases).
-2. **The mod loader** (once): in `<Azimuth>\data\bin\` rename `azimuth-tls.dll` to `azimuth-tls.dll.original`
-   and put the downloaded `azimuth-tls.dll` there.
+2. **The mod loader** (once): in `<Azimuth>\data\bin\` rename the `azimuth-tls.dll` that is there (Azimuth's own,
+   or ExtraOptions') to `azimuth-tls.dll.original` and put the downloaded `azimuth-tls.dll` there. The loader loads
+   `azimuth-tls.dll.original` first and then the mods, so ExtraOptions keeps working as before (its ini, settings and
+   `Gamerpic.png` stay next to it). When ExtraOptions is updated, its new `azimuth-tls.dll` goes in as
+   `azimuth-tls.dll.original` (the loader stays `azimuth-tls.dll`).
 3. Create `<Azimuth>\mods\` and put `DualSense.dll` in it.
 4. For the DualSense: turn off Steam's *PlayStation Configuration Support* for the emulator and close DS4Windows.
    If you use HidHide, let `azimuth.exe` see the controller.
@@ -138,16 +144,18 @@ Default keys:
 
 ## Building from source
 ```
-build.cmd            builds out\mods\DualSense.dll
-build.cmd install    also copies it into ..\Azimuth\mods and ..\Azimuth FF\mods
+set FH2_GAME=D:\Forza Horizon 2 XboxOne     the folder with Azimuth\ and "Forza Horizon 2"\ (default: the one above)
+build.cmd            builds out\mods\DualSense.dll and out\loader\azimuth-tls.dll
+build.cmd install    also copies DualSense.dll into %FH2_GAME%\Azimuth\mods
 ```
 - **C compiler**: Visual Studio Build Tools (C++) or zig (`python -m pip install ziglang`); `build.cmd` uses
   whichever it finds. The DLL is built for size (`/O1` or `-Os`, unused code dropped, no symbols).
 - **The PlayStation pictures** (`tools\make_pack.py`, put inside the DLL by `tools\bin2h.py`): Python 3 with numpy
-  and Pillow, and the game's files (`..\Forza Horizon 2\Mount`): the icons are drawn in the sizes of the game's own,
+  and Pillow, and the game's files (`%FH2_GAME%\Forza Horizon 2\Mount`): the icons are drawn in the sizes of the game's own,
   and the game's `xg_x.dll` (from its `EmbeddedXvd`) is used through a small stub (`tools\xg\kernelx.c`) for the Xbox
   texture layouts. Without them the DLL is built without pictures of its own.
-- **The mod loader** (`loader\modloader.c`): MSVC, without the C runtime (`/NODEFAULTLIB`, entry `DllMain`).
+- **The mod loader** (`loader\modloader.c`): without the C runtime (entry `DllMain`, its own TLS directory), MSVC
+  or zig.
 
 | Path | What is there |
 |---|---|
@@ -157,13 +165,14 @@ build.cmd install    also copies it into ..\Azimuth\mods and ..\Azimuth FF\mods
 | `DualSense\keyboard.h` | the keyboard |
 | `DualSense\ui.h` | the switch in the game's settings |
 | `DualSense\icons.h` | the icon looks and their live switch; `texture.h`, `bc7.h`, `png.h`, `inflate.h`, `keyicons.h`, `tables.h`: textures, decoders, the keycaps |
-| `common\fh2mod.h` | shared code: log, ini, finding the engine's XInput table and the game's code |
+| `DualSense\strtab.h` | the switch's name in the game's string tables of every language |
+| `common\fh2mod.h` | shared code: log, ini, the game's folder, finding the engine's XInput table and the game's code |
 | `loader\` | the mod loader |
 | `tools\` | the icon pictures, generated tables, the ini and the pictures into C headers |
 
 ## How it works (for modders)
 Everything is found by code signatures, not fixed addresses; when something is not found, the log says so and only
-that part is left out. The addresses below are for Forza Horizon 2 1.0.0.64 and Azimuth 0.9.7.
+that part is left out. The addresses below are for Forza Horizon 2 1.0.0.64 and Azimuth 0.9.9.
 
 - **Input/rumble**: the engine calls XInput through its own table of function pointers; `GetState` and `SetState`
   are replaced. `Gamepad::SetVibration` is hooked for the impulse trigger levels, which the engine drops.
@@ -176,9 +185,14 @@ that part is left out. The addresses below are for Forza Horizon 2 1.0.0.64 and 
   while it sees Xbox pads, their whole rumble goes that way (XInput and it would fight over the big motors).
 - **The settings switch**: a new property (`TriggerFeedback`) is added to the controller options view model when
   the game registers its properties, modelled on the camera look-back switch; a row is added to the screen's XAML.
+  Its name is a key (`IDS_Option_TriggerFeedback`) added to `MyProfile.str` in every language's string table
+  (`media\stripped\stringtables\<LANG>.zip`, LSB2), so the game shows it in its own language.
 - **Files**: the engine's `CreateFileW` and related imports are hooked. The icon archives, the controls screen
-  drawing, the settings XAML and `zipmanifest.xml` are served from `mods\DualSense.cache\`, built at the game's
-  start.
+  drawing, the settings XAML, the string tables and `zipmanifest.xml` are served from `mods\DualSense.cache\`, built
+  at the game's start from the files as the mods loaded before have them (each keeps the others' changes).
+- **The loader**: Azimuth loads `data\bin\azimuth-tls.dll` as its static-TLS helper once the game is mapped (it reads
+  only the exports `azimuth_tls_index`, `azimuth_tls_attached` and a 0x150-byte TLS template). The loader is that
+  helper; then it loads `azimuth-tls.dll.original` (another helper with mods, such as ExtraOptions) and `mods\*.dll`.
 - **Live icon switch**: Azimuth seals texture memory nobody writes to (read-only) and uploads it again when written.
   The mod finds the icons in memory and writes the wanted look over them; the engine's exception handler unseals the
   pages and sends the textures to the GPU again.
