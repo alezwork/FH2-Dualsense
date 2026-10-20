@@ -5,14 +5,15 @@
      0x10768B0  r9b = (BYTE)(controller[6]-2) <= 1 / add rcx,0x2E0 / jmp rumble    (controller, dt, &CarIn)
    The slips are normalised by the game: 1 = the tyre's grip limit, more = sliding / locking / spinning (the trigger
    curves of media\ControllerHaptics.xml start at 1.5). The engine revs: 0 at idle, 1 at the redline. Both thunks
-   are hooked through the platform (hook_function, once Extra Options has patched the game): ours keeps the values
-   and goes on into the thunk. Found by their bytes (the rumble thunk is unique, the haptics one 16 bytes before it).
+   are hooked (MinHook, once the game's code is ready: hooks.h): ours keeps the values and goes on into the thunk.
+   Found by their bytes (the rumble thunk is unique, the haptics one 16 bytes before it).
    Without them: the triggers use the game's impulse trigger levels (wgi.h).
    The road under each wheel: the same code goes over the four wheels (0, 1 front left and right, 2, 3 rear) for
    their surfaces' bumpiness -- a wheel's contact (or none: in the air) and in it the surface's number in the game's
-   table of surfaces (media\physics\surfaceTypes.xml: records of 0x1F0 bytes, the name first). An instruction hook
-   there (API 7) reads the number of every wheel on the ground and the car's speed (m/s, in xmm12), so the vibration
-   and the triggers can tell gravel from grass from a kerb, and a jump from a landing.
+   table of surfaces (media\physics\surfaceTypes.xml: records of 0x1F0 bytes, the name first). There (FH2 1.0.0.64:
+   0x2FDF0F, "movzx edx, byte [rax+1]; mov rcx, [table]", 11 bytes) a jump to a stub of ours hands the wheel (rbx),
+   its contact (rax) and the car's speed (m/s, xmm12) to surface_wheel, then does those two instructions and jumps
+   back; so the vibration and the triggers can tell gravel from grass from a kerb, and a jump from a landing.
    ABS: the game's assist is not read from the game -- the brakes show it: a front wheel locking under firm braking
    means no ABS; hard stops at the grip limit without locking mean ABS (abs_learn). */
 #pragma once
@@ -35,7 +36,7 @@ typedef struct {
 
 typedef void(__fastcall *CarRumbleFn)(BYTE *ctrl, float dt, const CarIn *in);
 typedef void(__fastcall *CarHapticsFn)(BYTE *ctrl, float dt, const float *in);
-static CarRumbleFn g_carRumble;   /* the thunks, as the platform hands them on */
+static CarRumbleFn g_carRumble;   /* the thunks, as MinHook hands them on */
 static CarHapticsFn g_carHaptics;
 
 /* the latest values; written by the game's thread, read by ours (a torn read is harmless) */
@@ -203,17 +204,14 @@ static int surf_kind(BYTE idx)
     return k;
 }
 
-/* the instruction hook, for each wheel on the ground: rbx = the wheel, rax = its contact, [rax+1] its surface */
-static void hk_wheel_surface(FH2Context *c, void *user)
+/* from the stub, for each wheel on the ground: the wheel, its contact ([+1] its surface), the car's speed */
+static void surface_wheel(ULONG_PTR wheel, const BYTE *contact, float speed)
 {
-    unsigned w = (unsigned)c->rbx;
-    const BYTE *contact = (const BYTE *)c->rax;
-    (void)user;
-    if (w < 4 && contact) {
-        g_wheelsNow.idx[w] = contact[1];
-        g_wheelsNow.seen |= (BYTE)(1u << w);
+    if (wheel < 4 && contact) {
+        g_wheelsNow.idx[wheel] = contact[1];
+        g_wheelsNow.seen |= (BYTE)(1u << wheel);
     }
-    g_wheelsNow.speed = c->xmm[12].f[0];
+    g_wheelsNow.speed = speed;
 }
 
 /* how much the road is felt at this speed, 0..1 (full from 90 km/h) */
@@ -365,7 +363,7 @@ static void __fastcall hk_car_haptics(BYTE *ctrl, float dt, const float *in)
     g_carHaptics(ctrl, dt, in);
 }
 
-/* at the game's code (base: from wait_for_code): both thunks through the platform */
+/* at the game's code (base: from wait_for_game): both thunks hooked */
 static int car_install(BYTE *base)
 {
     static const BYTE kRumble[20] = {0x0F, 0xB6, 0x41, 0x06, 0x2C, 0x02, 0x3C, 0x01, 0x41, 0x0F,
@@ -390,15 +388,11 @@ static int car_install(BYTE *base)
                 "trigger levels only", n);
         return 0;
     }
-    FH2Hook *a = g_api->hook_function(g_mod, "car feedback: rumble thunk", r, (void *)hk_car_rumble, (void **)&g_carRumble);
-    FH2Hook *b = g_api->hook_function(g_mod, "car feedback: haptics thunk", h, (void *)hk_car_haptics, (void **)&g_carHaptics);
-    if (!a || !b || !g_api->enable_hooks(g_mod, a) || !g_api->enable_hooks(g_mod, b)) {
-        ds_note("car: the platform did not hook the game's feedback code (see its log) -- the triggers use the game's "
-                "impulse trigger levels only");
-        if (a)
-            g_api->disable_hooks(g_mod, a);
-        if (b)
-            g_api->disable_hooks(g_mod, b);
+    if (!mh_hook("car feedback: rumble thunk", r, (void *)hk_car_rumble, (void **)&g_carRumble) ||
+        !mh_hook("car feedback: haptics thunk", h, (void *)hk_car_haptics, (void **)&g_carHaptics)) {
+        ds_note("car: the game's feedback code could not be hooked -- the triggers use the game's impulse trigger "
+                "levels only");
+        MH_DisableHook(r), MH_DisableHook(h);
         return 0;
     }
     Car.hooked = 1;
@@ -406,7 +400,7 @@ static int car_install(BYTE *base)
     return 1;
 }
 
-/* the wheels' surfaces: an instruction hook in the car's feedback code (API 7), where it reads a wheel's surface */
+/* the wheels' surfaces: a jump in the car's feedback code, where it reads a wheel's surface, to a stub */
 static int surface_install(BYTE *base)
 {
     static const char kLoop[] = "FF 90 E0 04 00 00 48 85 C0 74 ?? 0F B6 50 01 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? C5 F8 2F "
@@ -414,10 +408,9 @@ static int surface_install(BYTE *base)
     static const BYTE kRumbleOf[] = {0x8B, 0xC2, 0x48, 0x69, 0xD0, 0xF0, 0x01, 0x00, 0x00, 0x48, 0x8B, 0x41, 0x08};
     Image g;
     int n = 0;
-    BYTE *p, *fn;
-    FH2Hook *h;
-    if (g_api->api_version < 7 || !Car.hooked) {
-        ds_note("surfaces: %s -- no road surfaces", Car.hooked ? "the platform is too old (2.6.0 or newer)" : "no car data");
+    BYTE *p, *fn, *stub, jump[11], *q;
+    if (!Car.hooked) {
+        ds_note("surfaces: no car data -- no road surfaces");
         return 0;
     }
     if (!image_of(base, &g))
@@ -433,11 +426,35 @@ static int surface_install(BYTE *base)
         ds_note("surfaces: the game's surface table is not where expected -- no road surfaces");
         return 0;
     }
-    h = g_api->hook_instruction(g_mod, "car feedback: a wheel's surface", p + 11, hk_wheel_surface, NULL);
-    if (!h || !g_api->enable_hooks(g_mod, h)) {
-        if (h)
-            g_api->disable_hooks(g_mod, h);
-        ds_note("surfaces: the platform did not hook the game's wheel code (see its log) -- no road surfaces");
+    /* the stub: push rax; sub rsp, 28h (the stack 16-aligned for the call); rcx = rbx; rdx = rax; xmm2 = xmm12;
+       call surface_wheel; add rsp, 28h; pop rax; then the two instructions moved here (movzx edx, byte [rax+1];
+       mov rcx, [table], by its address) and a jump back after them. rcx, rdx, r8-r11, xmm0-5 and the flags are free
+       there: the game's next call (0x104E1C0) takes rcx and edx only, and they are set by the moved ones. */
+    stub = alloc_near(p, 128);
+    if (!stub) {
+        ds_note("surfaces: no memory near the game's code -- no road surfaces");
+        return 0;
+    }
+    q = stub;
+    *q++ = 0x50;                                                     /* push rax */
+    *q++ = 0x48, *q++ = 0x83, *q++ = 0xEC, *q++ = 0x28;             /* sub rsp, 0x28 */
+    *q++ = 0x48, *q++ = 0x89, *q++ = 0xD9;                           /* mov rcx, rbx */
+    *q++ = 0x48, *q++ = 0x89, *q++ = 0xC2;                           /* mov rdx, rax */
+    *q++ = 0x41, *q++ = 0x0F, *q++ = 0x28, *q++ = 0xD4;             /* movaps xmm2, xmm12 */
+    *q++ = 0x48, *q++ = 0xB8, *(void **)q = (void *)surface_wheel, q += 8; /* mov rax, surface_wheel */
+    *q++ = 0xFF, *q++ = 0xD0;                                        /* call rax */
+    *q++ = 0x48, *q++ = 0x83, *q++ = 0xC4, *q++ = 0x28;             /* add rsp, 0x28 */
+    *q++ = 0x58;                                                     /* pop rax */
+    *q++ = 0x0F, *q++ = 0xB6, *q++ = 0x50, *q++ = 0x01;             /* movzx edx, byte [rax+1] */
+    *q++ = 0x48, *q++ = 0xB9, *(void **)q = (void *)g_surfGlobal, q += 8; /* mov rcx, &table */
+    *q++ = 0x48, *q++ = 0x8B, *q++ = 0x09;                           /* mov rcx, [rcx] */
+    *q++ = 0xFF, *q++ = 0x25, *(DWORD *)q = 0, q += 4;               /* jmp [rip] */
+    *(void **)q = (void *)(p + 22), q += 8;                          /* back after the two */
+    FlushInstructionCache(GetCurrentProcess(), stub, (SIZE_T)(q - stub));
+    jump[0] = 0xE9, *(INT32 *)(jump + 1) = (INT32)(stub - (p + 11 + 5));
+    memset(jump + 5, 0x90, 6);
+    if (!code_patch(p + 11, p + 11, jump, sizeof jump) || memcmp(p + 11, jump, sizeof jump)) {
+        ds_note("surfaces: the game's wheel code could not be changed -- no road surfaces");
         return 0;
     }
     Surf.hooked = 1;

@@ -1,26 +1,22 @@
-/* base.h -- what the mod's parts share: the FH2 Mod Platform's API, the mod's folder next to azimuth.exe
-   (DualSense\: DualSense.ini, DualSense.log, an icon pack of your own), the log, the ini, the clock, the game's image. */
+/* base.h -- what the mod's parts share: its folder next to azimuth.exe (DualSense\: DualSense.ini, DualSense.log,
+   the game's files it has made, an icon pack of your own), the log, the ini, the clock, the game's image. */
 #pragma once
 #include <windows.h>
 #include <xinput.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include "../platform/fh2mod.h"
 
-#define DS_VERSION "2.1.0"
-#ifndef FH2MOD_PLATFORM_VERSION
-#define FH2MOD_PLATFORM_VERSION "2.7.0" /* the platform the release ships (platform\fh2mod.h is its header) */
-#endif
+#define DS_VERSION "2.2.0"
 
-static const FH2ModApi *g_api;
-static FH2Mod *g_mod;
-static WCHAR g_dir[MAX_PATH]; /* <Azimuth>\DualSense\ */
+extern IMAGE_DOS_HEADER __ImageBase; /* this DLL */
+static WCHAR g_azDir[MAX_PATH]; /* azimuth.exe's folder, with its \ */
+static WCHAR g_dir[MAX_PATH];   /* <Azimuth>\DualSense\ */
 static WCHAR g_ini[MAX_PATH];
 static HANDLE g_log;
 static CRITICAL_SECTION g_logLock;
 
-static void ds_line(const char *line, int platform)
+static void ds_line(const char *line)
 {
     char buf[1100];
     DWORD n;
@@ -34,8 +30,6 @@ static void ds_line(const char *line, int platform)
         WriteFile(g_log, buf, n, &n, NULL);
         LeaveCriticalSection(&g_logLock);
     }
-    if (platform && g_api && g_mod)
-        g_api->log(g_mod, line);
 }
 
 /* a line in DualSense.log */
@@ -47,7 +41,7 @@ static void fh2_say(const char *fmt, ...)
     if (_vsnprintf(line, sizeof line - 1, fmt, ap) < 0)
         line[sizeof line - 1] = 0;
     va_end(ap);
-    ds_line(line, 0);
+    ds_line(line);
 }
 
 /* wide text into DualSense.log as UTF-8 */
@@ -59,7 +53,7 @@ static void fh2_say_w(const char *prefix, const WCHAR *w)
     fh2_say("%s%s", prefix, u);
 }
 
-/* a line in DualSense.log and in the platform's log (what a player looks at first: what is on, what is not) */
+/* a line in DualSense.log that matters (what is on, what is not) */
 static void ds_note(const char *fmt, ...)
 {
     char line[1024];
@@ -68,7 +62,7 @@ static void ds_note(const char *fmt, ...)
     if (_vsnprintf(line, sizeof line - 1, fmt, ap) < 0)
         line[sizeof line - 1] = 0;
     va_end(ap);
-    ds_line(line, 1);
+    ds_line(line);
 }
 
 /* the folder (made when missing), the log (new each start), the ini with its defaults when there is none */
@@ -76,11 +70,14 @@ static void ds_files_open(const char *defaultIni)
 {
     SYSTEMTIME t;
     WCHAR log[MAX_PATH];
-    const WCHAR *az = g_api && g_api->azimuth_dir ? g_api->azimuth_dir : L".";
-    if (lstrlenW(az) + 32 >= MAX_PATH)
-        az = L".";
-    lstrcpyW(g_dir, az);
-    lstrcatW(g_dir, L"\\DualSense\\");
+    DWORD n = GetModuleFileNameW(NULL, g_azDir, MAX_PATH);
+    while (n && g_azDir[n - 1] != '\\' && g_azDir[n - 1] != '/')
+        n--;
+    g_azDir[n] = 0;
+    if (!n || n + 40 >= MAX_PATH)
+        lstrcpyW(g_azDir, L".\\");
+    lstrcpyW(g_dir, g_azDir);
+    lstrcatW(g_dir, L"DualSense\\");
     CreateDirectoryW(g_dir, NULL);
     lstrcpyW(g_ini, g_dir);
     lstrcatW(g_ini, L"DualSense.ini");
@@ -91,13 +88,13 @@ static void ds_files_open(const char *defaultIni)
     if (g_log == INVALID_HANDLE_VALUE)
         g_log = NULL;
     GetLocalTime(&t);
-    fh2_say("DualSense %s: %04d-%02d-%02d, FH2 Mod Platform %s (API %u)", DS_VERSION, t.wYear, t.wMonth, t.wDay,
-            g_api && g_api->platform_version ? g_api->platform_version : "?", g_api ? g_api->api_version : 0);
+    fh2_say("DualSense %s: %04d-%02d-%02d", DS_VERSION, t.wYear, t.wMonth, t.wDay);
+    fh2_say_w("Azimuth: ", g_azDir);
     if (GetFileAttributesW(g_ini) == INVALID_FILE_ATTRIBUTES) {
         HANDLE h = CreateFileW(g_ini, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
-        DWORD n;
+        DWORD w;
         if (h != INVALID_HANDLE_VALUE) {
-            WriteFile(h, defaultIni, (DWORD)strlen(defaultIni), &n, NULL);
+            WriteFile(h, defaultIni, (DWORD)strlen(defaultIni), &w, NULL);
             CloseHandle(h);
             fh2_say("DualSense.ini made with the defaults");
         }
@@ -211,7 +208,7 @@ static SHORT fh2_axis(float v) /* -1..1 -> an XInput stick */
     return (SHORT)(v >= 0 ? v * 32767.0f : v * 32768.0f);
 }
 
-/* ---- a mapped image: the game's (from the platform) or the engine's (azimuth.exe) ---- */
+/* ---- a mapped image: the game's (hooks.h) or the engine's (azimuth.exe) ---- */
 typedef struct {
     BYTE *base, *text, *textEnd, *rdata, *rdataEnd, *data, *dataEnd;
 } Image;
@@ -238,6 +235,25 @@ static int image_of(BYTE *b, Image *m)
 }
 
 static BYTE *rel32(BYTE *insn, int dispAt, int len) { return insn + len + *(INT32 *)(insn + dispAt); }
+
+/* the start of the image's function that holds p (its exception directory), or NULL */
+static BYTE *func_start(BYTE *base, const BYTE *p)
+{
+    IMAGE_NT_HEADERS64 *nt = (IMAGE_NT_HEADERS64 *)(base + ((IMAGE_DOS_HEADER *)base)->e_lfanew);
+    IMAGE_DATA_DIRECTORY d = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+    RUNTIME_FUNCTION *f = (RUNTIME_FUNCTION *)(base + d.VirtualAddress);
+    DWORD rva = (DWORD)(p - base), lo = 0, hi = d.Size / sizeof *f;
+    while (lo < hi) {
+        DWORD mid = (lo + hi) / 2;
+        if (f[mid].EndAddress <= rva)
+            lo = mid + 1;
+        else if (f[mid].BeginAddress > rva)
+            hi = mid;
+        else
+            return base + f[mid].BeginAddress;
+    }
+    return NULL;
+}
 
 static int in_range(const void *p, const BYTE *lo, const BYTE *hi) { return (const BYTE *)p >= lo && (const BYTE *)p < hi; }
 

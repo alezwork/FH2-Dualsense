@@ -1,6 +1,6 @@
 /* fx.h -- short haptic effects, as the PlayStation 5's own: the menus' ticks and clicks (from the game's interface
    sounds, sounds.h), the game's events (skills, the tombola's drum, landings, crashes, gear changes), the tests on the
-   DualSense page. A voice is a few milliseconds to a few seconds of a waveform made from its time alone (no state, so
+   settings page (Settings > Controls). A voice is a few milliseconds to a few seconds of a waveform made from its time alone (no state, so
    any thread can render it at any moment):
    - HD haptics (USB): the stream renders every voice sample by sample on the controller's two actuators;
    - rumble emulation (Bluetooth, or HD haptics off): the controller thread turns the voices' envelopes into the

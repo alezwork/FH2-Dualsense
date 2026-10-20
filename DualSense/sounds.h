@@ -4,8 +4,8 @@
    object of the game's audio engine (AudioObjectUIEvent): its methods 0 and 1 (FH2 1.0.0.64: 0x100ED70 and 0x100ED00,
    (this, const std::string &trigger, ...)) start one, the engine's StopUIEvent (0x10229B0, (engine, const std::string
    &trigger)) stops it -- whether the game's code or a XAML storyboard (local:AudioEvent, as the tombola's) asks for
-   it. All three are hooked (found by their bytes); ours reads the trigger's name, picks the feel for it (kUi, the first
-   match) and goes on into the game's.
+   it. All three are hooked (MinHook; found by their bytes); ours reads the trigger's name, picks the feel for it (kUi,
+   the first match) and goes on into the game's.
    The skills also drive the combo on the player lights: one more light for every skill in the chain, all five
    blinking when it is banked, the middle one when it is lost. */
 #pragma once
@@ -412,7 +412,7 @@ static void __fastcall hk_ui_stop(void *engine, const BYTE *name)
     g_uiStop(engine, name);
 }
 
-/* at the game's code: the three through the platform */
+/* at the game's code: the three hooked */
 static int sounds_install(BYTE *base)
 {
     static const char kPlay[] = "40 53 48 83 EC 50 48 C7 44 24 20 FE FF FF FF 48 8B D9 48 8B 0D ?? ?? ?? ?? 48 8B 01 4C 8B C2 "
@@ -426,7 +426,6 @@ static int sounds_install(BYTE *base)
     Image g;
     int n[3];
     BYTE *play, *start, *stop;
-    FH2Hook *h[3];
     if (!image_of(base, &g))
         return 0;
     play = find_unique(g.text, g.textEnd, kPlay, &n[0]);
@@ -437,15 +436,11 @@ static int sounds_install(BYTE *base)
                 n[2]);
         return 0;
     }
-    h[0] = g_api->hook_function(g_mod, "ui sounds: start", start, (void *)hk_ui_start, (void **)&g_uiStart);
-    h[1] = g_api->hook_function(g_mod, "ui sounds: play", play, (void *)hk_ui_play, (void **)&g_uiPlay);
-    h[2] = g_api->hook_function(g_mod, "ui sounds: stop", stop, (void *)hk_ui_stop, (void **)&g_uiStop);
-    if (!h[0] || !h[1] || !h[2] || !g_api->enable_hooks(g_mod, h[0]) || !g_api->enable_hooks(g_mod, h[1]) ||
-        !g_api->enable_hooks(g_mod, h[2])) {
-        for (int i = 0; i < 3; i++)
-            if (h[i])
-                g_api->disable_hooks(g_mod, h[i]);
-        ds_note("sounds: the platform did not hook the game's interface sounds (see its log) -- no menu haptics");
+    if (!mh_hook("ui sounds: start", start, (void *)hk_ui_start, (void **)&g_uiStart) ||
+        !mh_hook("ui sounds: play", play, (void *)hk_ui_play, (void **)&g_uiPlay) ||
+        !mh_hook("ui sounds: stop", stop, (void *)hk_ui_stop, (void **)&g_uiStop)) {
+        MH_DisableHook(start), MH_DisableHook(play), MH_DisableHook(stop);
+        ds_note("sounds: the game's interface sounds could not be hooked -- no menu haptics");
         return 0;
     }
     g_soundsHooked = 1;
