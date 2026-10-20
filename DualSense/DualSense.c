@@ -1,28 +1,27 @@
-/* DualSense.dll -- controllers for Forza Horizon 2 (and Fast & Furious) on Azimuth, one file in Azimuth\mods\:
-   the PlayStation 5 controller (DualSense, DualSense Edge; USB or Bluetooth, no other software needed), the Xbox
-   controller's impulse triggers (xbox.h), the keyboard (keyboard.h), the button icons that follow the device in use
-   with the PlayStation pictures inside (icons.h), the Trigger feedback switch in the game's settings (ui.h).
+/* DualSense.dll -- the PlayStation 5 controller (DualSense, DualSense Edge; USB or Bluetooth, no other software
+   needed) for Forza Horizon 2 on Azimuth 0.9.10, a mod of the FH2 Mod Platform (fh2-mods\DualSense.dll).
 
-   What the game gets: the DualSense, the real pads and the keyboard as its one Xbox gamepad (XInput user 0 -- the
-   engine's XInput table is ours, common\fh2mod.h).
+   What the game gets: the DualSense as one of the PC's gamepads (wgi.h: the engine gives the game the PC's
+   Windows.Gaming.Input gamepads, and ours is one of them), with the PlayStation button icons (icons.h).
    What the controller gets from the game:
    - rumble: the game's two motors (engine revs, collisions, tyres: media\ControllerRumble.xml) -- as the DualSense's
      rumble emulation (USB/Bluetooth), or, on USB, as HD haptics: our own waveforms on the controller's two haptic
      audio channels (a low and a high tone per side, from the two motors);
    - the car itself (car.h: the game's own data for its rumble -- engine revs, the tyres' slip, collisions, gear
      changes): an engine hum at its revs, the rev limiter and gear changes in the HD haptics;
-   - trigger feedback, the adaptive triggers: a brake-pedal resistance on L2 and a light one on R2; L2 chatters at the front tyres' grip
+   - adaptive triggers: a brake-pedal resistance on L2 and a light one on R2; L2 chatters at the front tyres' grip
      limit under braking and judders as they lock, R2 vibrates with wheel spin and knocks on the rev limiter, gear
      changes knock, crashes jolt; free in the menus. Without the car's data: the game's Xbox One impulse triggers
-     (media\ControllerHaptics.xml; the engine drops them, we take them from Gamepad::SetVibration) as vibration;
+     (media\ControllerHaptics.xml, which the engine passes on with the motors) as vibration;
    - light bar: a colour, flashing with the rumble (or the revs, or the battery level); low battery blinks red;
    - player lights: a rev counter while driving (else player 1); holding the PS button shows the battery;
    - mic button: gyro steering on/off (tilt the controller like a wheel), the mic light shows it;
    - touchpad: click = View, swipes = D-pad; Create = View, Options = Menu; Edge paddles/Fn as set in the ini.
-   Settings: mods\DualSense.ini; log: mods\DualSense.log. Report layouts: Linux hid-playstation.c; trigger effects:
+   The main switches are on the game's Mods page (Pause > Settings > MODS), the rest in DualSense\DualSense.ini next
+   to azimuth.exe; the log is DualSense\DualSense.log. Report layouts: Linux hid-playstation.c; trigger effects:
    Nielk1's DualSense trigger effect notes (MIT). */
 #define COBJMACROS
-#include "../common/fh2mod.h"
+#include "base.h"
 #include <setupapi.h>
 #include <hidsdi.h>
 #include <mmdeviceapi.h>
@@ -68,6 +67,9 @@ static struct {
     int gyro;  /* 0 off, 1 toggle (mic button), 2 always */
     float gyroMaxAngle;
     int gyroInvert;
+    int trigOn;       /* the Mods page's "Adaptive triggers" ([Triggers] Enabled) */
+    int checkUpdates; /* the platform looks for a newer release on GitHub */
+    int menuRu;       /* the Mods page in Russian */
 } S;
 
 static WORD button_of(const WCHAR *s)
@@ -167,31 +169,33 @@ static void load_settings(void)
     if (S.gyroMaxAngle < 5)
         S.gyroMaxAngle = 5;
     S.gyroInvert = fh2_ini_int(L"Gyro", L"Invert", 0);
+    S.trigOn = fh2_ini_int(L"Triggers", L"Enabled", 1) != 0;
+    S.checkUpdates = fh2_ini_int(L"DualSense", L"CheckUpdates", 1) != 0;
+    {
+        /* the Mods page's language: Auto = the game's (Azimuth's language, else Windows') */
+        static const WCHAR *const lang[] = {L"Auto", L"English", L"Russian"};
+        int l = choice(L"DualSense", L"MenuLanguage", L"Auto", lang, 3, 0);
+        WCHAR az[MAX_PATH], v[32] = L"";
+        if (l == 0 && g_api && lstrlenW(g_api->azimuth_dir) + 24 < MAX_PATH) {
+            lstrcpyW(az, g_api->azimuth_dir);
+            lstrcatW(az, L"\\data\\azimuth.ini");
+            GetPrivateProfileStringW(L"launcher", L"language", L"", v, 32, az);
+        }
+        S.menuRu = l == 2 || (l == 0 && (v[0] ? (v[0] | 32) == 'r' && (v[1] | 32) == 'u'
+                                              : PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN));
+    }
 }
 
 /* ---------------------------------------------------------------------------------------------------------------- */
-/* what the hooks and the controller thread share                                                                   */
+/* what the engine's calls and the controller thread share                                                          */
 static SRWLOCK g_lock = SRWLOCK_INIT;
-static Fh2Pads g_pads;
-static Fh2SetVibrationFn g_origSetVibration;
 static volatile LONG g_connected;
-static XINPUT_GAMEPAD g_dsPad; /* the controller as an Xbox pad */
-static DWORD g_dsPacket;
-static WORD g_motor[2];     /* the game's motors (XInputSetState): left = low frequency, right = high */
-static float g_trigger[2];  /* the game's impulse triggers (SetVibration): left, right */
+static XINPUT_GAMEPAD g_dsPad; /* the controller, in the Xbox pad's terms */
+static WORD g_motor[2];        /* the game's motors: left = low frequency, right = high */
+static float g_trigger[2];     /* the game's impulse triggers: left, right */
 static volatile LONG g_outDirty;
-static DWORD g_inSetVibration; /* the thread inside the game's SetVibration */
 static HANDLE g_wake;
-static volatile LONG g_trigOn = 1; /* trigger feedback on (the switch in the game's settings, ui.h) */
-static volatile ULONGLONG g_dsInputAt, g_padInputAt; /* the last real use of the DualSense / of an XInput pad */
-
-#include "ui.h"
-#include "car.h"
-#include "keyboard.h"
-static int g_kbBuiltin; /* the keyboard is ours (keyboard.h), not an old Keyboard.dll's */
-static volatile LONG g_xboxPads;         /* Xbox pads Windows.Gaming.Input drives now (xbox.h; 0: XInput rumbles them) */
-static volatile BYTE g_xpadLT, g_xpadRT; /* the real pads' triggers, last poll */
-static HANDLE g_xwake;
+static volatile ULONGLONG g_dsInputAt; /* the last real use of the DualSense */
 
 static int used(const XINPUT_GAMEPAD *g)
 {
@@ -200,75 +204,8 @@ static int used(const XINPUT_GAMEPAD *g)
            g->sThumbRY > 12000 || g->sThumbRY < -12000;
 }
 
-/* ---------------------------------------------------------------------------------------------------------------- */
-/* the hooks                                                                                                        */
-static DWORD WINAPI ds_get_state(DWORD user, XINPUT_STATE *st)
-{
-    XINPUT_GAMEPAD pads;
-    DWORD packet;
-    if (user != 0)
-        return ERROR_DEVICE_NOT_CONNECTED;
-    int n = fh2_pads_get(&g_pads, &pads, &packet);
-    if (n && used(&pads))
-        g_padInputAt = GetTickCount64();
-    g_xpadLT = pads.bLeftTrigger, g_xpadRT = pads.bRightTrigger;
-    AcquireSRWLockShared(&g_lock);
-    int ds = g_connected;
-    if (ds) {
-        fh2_merge(&pads, &g_dsPad);
-        packet += g_dsPacket;
-    }
-    ReleaseSRWLockShared(&g_lock);
-    if (g_kbBuiltin) { /* the keyboard: always there */
-        XINPUT_GAMEPAD kb;
-        packet += kb_poll(&kb);
-        fh2_merge(&pads, &kb);
-    } else if (!n && !ds)
-        return ERROR_DEVICE_NOT_CONNECTED;
-    st->dwPacketNumber = packet;
-    st->Gamepad = pads;
-    return ERROR_SUCCESS;
-}
-
-static DWORD WINAPI ds_set_state(DWORD user, XINPUT_VIBRATION *vib)
-{
-    if (user != 0)
-        return ERROR_DEVICE_NOT_CONNECTED;
-    AcquireSRWLockExclusive(&g_lock);
-    g_motor[0] = vib->wLeftMotorSpeed;
-    g_motor[1] = vib->wRightMotorSpeed;
-    /* the engine stopping the rumble (focus lost, the game's suspend): the triggers stop too */
-    if (!vib->wLeftMotorSpeed && !vib->wRightMotorSpeed && g_inSetVibration != GetCurrentThreadId())
-        g_trigger[0] = g_trigger[1] = 0;
-    ReleaseSRWLockExclusive(&g_lock);
-    InterlockedExchange(&g_outDirty, 1);
-    if (g_wake)
-        SetEvent(g_wake);
-    if (g_xwake)
-        SetEvent(g_xwake);
-    if (!g_xboxPads) /* else Windows.Gaming.Input carries it, with the trigger motors (xbox.h) */
-        fh2_pads_set(&g_pads, vib);
-    return ERROR_SUCCESS;
-}
-
-static float level(float v) { return v > 0 && v <= 1 ? v : v > 1 ? 1 : 0; }
-
-static HRESULT __fastcall ds_set_vibration(void *self, const float *levels)
-{
-    if (levels) {
-        AcquireSRWLockExclusive(&g_lock);
-        g_trigger[0] = level(levels[2]);
-        g_trigger[1] = level(levels[3]);
-        ReleaseSRWLockExclusive(&g_lock);
-        InterlockedExchange(&g_outDirty, 1);
-        if (g_wake)
-            SetEvent(g_wake);
-    }
-    g_inSetVibration = GetCurrentThreadId();
-    HRESULT hr = g_origSetVibration(self, levels);
-    g_inSetVibration = 0;
-    return hr;
-}
+#include "wgi.h"
+#include "car.h"
 
 /* ---------------------------------------------------------------------------------------------------------------- */
 /* the controller                                                                                                   */
@@ -849,10 +786,7 @@ static void parse_input(Ds *d, const BYTE *rep, DWORD len)
     if (used(&g))
         g_dsInputAt = GetTickCount64();
     AcquireSRWLockExclusive(&g_lock);
-    if (memcmp(&g, &g_dsPad, sizeof g)) {
-        g_dsPad = g;
-        g_dsPacket++;
-    }
+    g_dsPad = g;
     ReleaseSRWLockExclusive(&g_lock);
 }
 
@@ -879,7 +813,7 @@ static void triggers_make(BYTE e[2][11], double now, const float game[2])
 {
     int fg = fh2_foreground();
     BYTE l2 = g_dsPad.bLeftTrigger, r2 = g_dsPad.bRightTrigger;
-    if (!g_trigOn || (Car.hooked && !fg)) { /* the settings switch; the game in the background */
+    if (!S.trigOn || (Car.hooked && !fg)) { /* the switch off; the game in the background */
         trig_off(e[0]);
         trig_off(e[1]);
         return;
@@ -1087,6 +1021,15 @@ static void send_reset(Ds *d)
     ds_write(d, c);
 }
 
+/* the HD haptics stream (USB): a new one, any older one ends */
+static void haptics_start(void)
+{
+    LONG gen = InterlockedIncrement(&g_hapGen);
+    HANDLE h = CreateThread(NULL, 0, haptics_thread, (void *)(LONG_PTR)gen, 0, NULL);
+    if (h)
+        CloseHandle(h);
+}
+
 static DWORD WINAPI controller_thread(void *arg)
 {
     (void)arg;
@@ -1095,6 +1038,7 @@ static DWORD WINAPI controller_thread(void *arg)
     int reading = 0;
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
     for (;;) {
+        wgi_update(d->h != NULL); /* ours among the game's gamepads while the controller is there */
         if (!d->h) {
             double now = fh2_now();
             if (now < nextScan) {
@@ -1108,13 +1052,10 @@ static DWORD WINAPI controller_thread(void *arg)
             T.first = 1;
             T.gyroOn = S.gyro == 2;
             InterlockedExchange(&g_connected, 1);
-            if (!d->bt && (S.haptics == 2 || S.haptics == 3)) {
-                LONG gen = InterlockedIncrement(&g_hapGen);
-                HANDLE h = CreateThread(NULL, 0, haptics_thread, (void *)(LONG_PTR)gen, 0, NULL);
-                if (h)
-                    CloseHandle(h);
-            }
+            if (!d->bt && (S.haptics == 2 || S.haptics == 3))
+                haptics_start();
             send_output(d, 1);
+            wgi_update(1);
         }
         /* one read stays pending; the output goes when the game changes something, and every 50 ms */
         if (!reading) {
@@ -1147,25 +1088,215 @@ static DWORD WINAPI controller_thread(void *arg)
         AcquireSRWLockExclusive(&g_lock);
         ZeroMemory(&g_dsPad, sizeof g_dsPad);
         ReleaseSRWLockExclusive(&g_lock);
+        wgi_update(0);
         nextScan = fh2_now() + 1.0;
     }
 }
 
-#include "xbox.h"
 #include "icons.h"
 
-static void install(void)
+/* ---------------------------------------------------------------------------------------------------------------- */
+/* the Mods page (Pause > Settings > MODS): the main switches; a change goes into DualSense.ini at once             */
+static void on_switch(void *user, const char *key, int value)
 {
-    Fh2Engine e;
-    fh2_mod_open(L"DualSense");
-    fh2_ini_default(kDefaultIni);
+    (void)user;
+    value = value != 0;
+    if (!strcmp(key, "Triggers")) {
+        S.trigOn = value;
+        fh2_ini_set_int(L"Triggers", L"Enabled", value);
+    } else if (!strcmp(key, "HDHaptics")) {
+        S.haptics = value ? 3 : 1;
+        fh2_ini_set(L"Vibration", L"Mode", value ? L"Auto" : L"Rumble");
+        if (!value)
+            InterlockedIncrement(&g_hapGen); /* the stream ends: the rumble emulation again */
+        else if (g_connected && g_ds.h && !g_ds.bt && !g_hapRunning)
+            haptics_start();
+    } else if (!strcmp(key, "Gyro")) {
+        S.gyro = value ? 1 : 0;
+        if (!value)
+            T.gyroOn = 0;
+        fh2_ini_set(L"Gyro", L"Steering", value ? L"Toggle" : L"Off");
+    } else if (!strcmp(key, "RevLights")) {
+        S.revLights = value;
+        fh2_ini_set_int(L"Lightbar", L"RevLights", value);
+    } else if (!strcmp(key, "Icons")) {
+        S.icons = value ? 2 : 0;
+        fh2_ini_set(L"Icons", L"PlayStation", value ? L"Auto" : L"Off");
+    } else if (!strcmp(key, "CheckUpdates")) {
+        S.checkUpdates = value;
+        fh2_ini_set_int(L"DualSense", L"CheckUpdates", value);
+    }
+    InterlockedExchange(&g_outDirty, 1);
+    if (g_wake)
+        SetEvent(g_wake);
+    fh2_say("Mods page: %s %s", key, value ? "on" : "off");
+}
+
+static void on_slider(void *user, const char *key, float value)
+{
+    int pct = (int)(value * 100 + 0.5f);
+    (void)user;
+    if (!strcmp(key, "Vibration")) {
+        S.strength = value;
+        fh2_ini_set_int(L"Vibration", L"Strength", pct);
+    } else if (!strcmp(key, "TriggerStrength")) {
+        S.trigStrength = value;
+        fh2_ini_set_int(L"Triggers", L"Strength", pct);
+    } else if (!strcmp(key, "Car")) {
+        S.carFeel = value;
+        fh2_ini_set_int(L"Vibration", L"Car", pct);
+    } else if (!strcmp(key, "LightBar")) {
+        S.brightness = value;
+        fh2_ini_set_int(L"Lightbar", L"Brightness", pct);
+    }
+    InterlockedExchange(&g_outDirty, 1);
+    if (g_wake)
+        SetEvent(g_wake);
+    fh2_say("Mods page: %s %d%%", key, pct);
+}
+
+typedef struct {
+    const char *key;
+    int slider, restart;
+    float min, max;
+    const char *en, *enDesc, *ru, *ruDesc;
+} Row;
+
+static const Row kRows[] = {
+    {"Triggers", 0, 0, 0, 0, "Adaptive triggers",
+     "A brake pedal's resistance on L2; the tyres' grip and lock-ups, wheel spin, gear changes and crashes felt in the "
+     "triggers.",
+     "Адаптивные курки",
+     "Сопротивление педали тормоза на L2; сцепление шин и блокировка колёс, пробуксовка, переключения передач и удары "
+     "ощущаются в курках."},
+    {"TriggerStrength", 1, 0, 0, 1, "Trigger strength", "How hard the triggers push back and vibrate.", "Сила курков",
+     "Насколько сильно курки сопротивляются и вибрируют."},
+    {"Vibration", 1, 0, 0, 2, "Vibration", "The game's rumble on the controller, percent.", "Вибрация",
+     "Сила вибрации игры на контроллере, в процентах."},
+    {"HDHaptics", 0, 0, 0, 0, "HD haptics (USB)",
+     "Over a USB cable the vibration is played by the controller's own haptic actuators: finer, with the engine's hum "
+     "in it. Off: the classic rumble.",
+     "HD-вибрация (USB)",
+     "По USB-кабелю вибрацию играют собственные вибромоторы контроллера: тоньше, с гулом двигателя. Выкл.: классическая "
+     "вибрация."},
+    {"Car", 1, 0, 0, 1, "Engine feel", "The engine's hum at its revs, the rev limiter and gear changes in the vibration.",
+     "Двигатель в вибрации", "Гул двигателя по оборотам, отсечка и переключения передач в вибрации."},
+    {"Gyro", 0, 0, 0, 0, "Gyro steering",
+     "The mic button turns steering by tilting the controller like a wheel on and off; its light shows it is on.",
+     "Руление наклоном",
+     "Кнопка микрофона включает и выключает руление наклоном контроллера, как рулём; её подсветка показывает, что "
+     "включено."},
+    {"LightBar", 1, 0, 0, 1, "Light bar", "The light bar's brightness (its colour and what it shows: DualSense.ini).",
+     "Световая панель", "Яркость световой панели (цвет и что она показывает — в DualSense.ini)."},
+    {"RevLights", 0, 0, 0, 0, "Rev counter lights", "The player lights under the touchpad show the engine's revs while driving.",
+     "Тахометр на индикаторах", "Индикаторы игрока под тачпадом показывают обороты двигателя во время езды."},
+    {"Icons", 0, 1, 0, 0, "PlayStation button icons",
+     "The game's button icons with the PlayStation pictures, when a DualSense is connected as the game starts.",
+     "Иконки кнопок PlayStation", "Иконки кнопок игры с картинками PlayStation, если DualSense подключён при запуске игры."},
+    {"CheckUpdates", 0, 1, 0, 0, "Check for updates", "The title screen says when a newer DualSense mod is out on GitHub.",
+     "Проверять обновления", "Экран заставки сообщает, когда на GitHub выходит новая версия мода DualSense."},
+};
+
+static float row_value(const char *key)
+{
+    if (!strcmp(key, "Triggers"))
+        return (float)S.trigOn;
+    if (!strcmp(key, "TriggerStrength"))
+        return S.trigStrength;
+    if (!strcmp(key, "Vibration"))
+        return S.strength;
+    if (!strcmp(key, "HDHaptics"))
+        return (float)(S.haptics >= 2);
+    if (!strcmp(key, "Car"))
+        return S.carFeel;
+    if (!strcmp(key, "Gyro"))
+        return (float)(S.gyro != 0);
+    if (!strcmp(key, "LightBar"))
+        return S.brightness;
+    if (!strcmp(key, "RevLights"))
+        return (float)(S.revLights != 0);
+    if (!strcmp(key, "Icons"))
+        return (float)(S.icons != 0);
+    if (!strcmp(key, "CheckUpdates"))
+        return (float)S.checkUpdates;
+    return 0;
+}
+
+static void settings_add(void)
+{
+    int added = 0;
+    if (g_api->api_version < 4) {
+        ds_note("Mods page: the platform is too old for it (2.3.0 or newer) -- the switches are in DualSense.ini");
+        return;
+    }
+    for (int i = 0; i < (int)(sizeof kRows / sizeof kRows[0]); i++) {
+        const Row *r = &kRows[i];
+        FH2Setting s;
+        if (r->slider && g_api->api_version < 5)
+            continue;
+        ZeroMemory(&s, sizeof s);
+        s.size = (uint32_t)(g_api->api_version >= 6 ? sizeof s : g_api->api_version >= 5 ? offsetof(FH2Setting, url)
+                                                                                          : offsetof(FH2Setting, kind));
+        s.key = r->key;
+        s.label = S.menuRu ? r->ru : r->en;
+        s.description = S.menuRu ? r->ruDesc : r->enDesc;
+        s.needs_restart = r->restart;
+        if (r->slider) {
+            s.kind = FH2_SETTING_SLIDER;
+            s.min = r->min, s.max = r->max, s.step = 0.05f;
+            s.slider_value = row_value(r->key);
+            s.display_scale = 100;
+            s.on_slide = on_slider;
+        } else {
+            s.value = row_value(r->key) != 0;
+            s.on_change = on_switch;
+        }
+        added += g_api->add_setting(g_mod, &s);
+    }
+    fh2_say("Mods page: %d rows (%s)", added, S.menuRu ? "in Russian" : "in English");
+}
+
+/* ---------------------------------------------------------------------------------------------------------------- */
+/* the start                                                                                                        */
+
+/* the mod's own thread: the icons (before the game reads its own), then the car's data (once the game's code may be
+   hooked: after Extra Options) */
+static DWORD WINAPI worker_thread(void *arg)
+{
+    (void)arg;
+    icons_make();
+    if (g_api->api_version < 3) {
+        ds_note("car: the platform is too old for hooks (2.2.0 or newer) -- the triggers use the game's impulse "
+                "trigger levels only");
+        return 0;
+    }
+    BYTE *base = (BYTE *)g_api->wait_for_code(0xFFFFFFFFu);
+    if (base)
+        car_install(base);
+    return 0;
+}
+
+FH2MOD_EXPORT int fh2mod_init(const FH2ModApi *api)
+{
+    FH2ModInfo info;
+    g_api = api;
+    ds_files_open(kDefaultIni);
     load_settings();
-    g_kbBuiltin = kb_install();
-    if (fh2_engine(&e)) {
-        g_uiAdaptive = ui_install();
-        if (S.triggers || S.carFeel > 0 || S.lightMode == 4 || S.revLights)
-            car_install();
-        icons_install(&e);
+    ZeroMemory(&info, sizeof info);
+    info.size = (uint32_t)(api->api_version >= 6 ? sizeof info : offsetof(FH2ModInfo, description));
+    info.name = "DualSense";
+    info.version = DS_VERSION;
+    info.github_repo = "alezwork/FH2-Dualsense";
+    info.platform_version = FH2MOD_PLATFORM_VERSION;
+    info.check_updates = S.checkUpdates;
+    info.description = S.menuRu ? "Контроллер PlayStation 5: адаптивные курки по данным машины, HD-вибрация, световая "
+                                  "панель, руление наклоном, иконки кнопок PlayStation."
+                                : "The PlayStation 5 controller: adaptive triggers from the car's own data, HD haptics, "
+                                  "the light bar, gyro steering, PlayStation button icons.";
+    g_mod = api->register_mod(&info);
+    if (!g_mod) {
+        fh2_say("the platform did not register the mod -- off");
+        return 1;
     }
     for (DWORD i = 0; i < 256; i++) {
         DWORD c = i;
@@ -1173,40 +1304,30 @@ static void install(void)
             c = c & 1 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
         g_crcTable[i] = c;
     }
-    if (!fh2_engine(&e))
-        return;
-    void **table = fh2_xinput_table(&e);
-    if (!table)
-        return;
-    g_pads.get = (Fh2GetStateFn)table[1];
-    g_pads.set = (Fh2SetStateFn)table[2];
-    InterlockedExchangePointer(&table[2], (void *)ds_set_state);
-    InterlockedExchangePointer(&table[1], (void *)ds_get_state);
-    if (S.triggers == 2 || fh2_ini_int(L"ImpulseTriggers", L"Enabled", 1))
-        g_origSetVibration = fh2_hook_set_vibration(&e, ds_set_vibration);
-    xbox_install();
-    if (!S.enabled) {
-        fh2_say("DualSense: the controller switched off ([DualSense] Enabled=0)");
-        return;
-    }
+    settings_add();
+    wgi_find_engine((BYTE *)GetModuleHandleW(NULL)); /* azimuth.exe */
     g_wake = CreateEventW(NULL, FALSE, FALSE, NULL);
-    HANDLE h = CreateThread(NULL, 0, controller_thread, NULL, 0, NULL);
-    if (h)
-        CloseHandle(h);
-    fh2_say("DualSense: on -- vibration %s, triggers %s, light bar mode %d, gyro steering %s",
+    if (S.enabled) {
+        HANDLE h = CreateThread(NULL, 0, controller_thread, NULL, 0, NULL);
+        if (h)
+            CloseHandle(h);
+    } else
+        ds_note("the controller switched off ([DualSense] Enabled=0)");
+    HANDLE w = CreateThread(NULL, 0, worker_thread, NULL, 0, NULL);
+    if (w)
+        CloseHandle(w);
+    ds_note("on -- vibration %s, triggers %s, light bar mode %d, gyro steering %s",
             S.haptics == 0 ? "off" : S.haptics == 1 ? "rumble" : S.haptics == 2 ? "HD haptics (USB)" : "auto",
-            S.triggers == 0 ? "off" : S.triggers == 1 ? "resistance" : g_origSetVibration ? "game" : "resistance (no hook)",
-            S.lightMode, S.gyro == 0 ? "off" : S.gyro == 1 ? "mic button" : "always");
+            !S.trigOn || !S.triggers ? "off" : S.triggers == 1 ? "resistance" : "game", S.lightMode,
+            S.gyro == 0 ? "off" : S.gyro == 1 ? "mic button" : "always");
+    return 0;
 }
 
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
 {
-    if (reason == DLL_PROCESS_ATTACH) {
+    if (reason == DLL_PROCESS_ATTACH)
         DisableThreadLibraryCalls(inst);
-        install();
-    } else if (reason == DLL_PROCESS_DETACH && reserved && g_ds.h) {
-        /* the process ends: our threads are gone, the handle is still open */
-        send_reset(&g_ds);
-    }
+    else if (reason == DLL_PROCESS_DETACH && reserved && g_ds.h)
+        send_reset(&g_ds); /* the process ends: our threads are gone, the handle is still open */
     return TRUE;
 }

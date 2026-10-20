@@ -4,10 +4,10 @@
      0x10768A0  add rcx,0x10D0 / jmp haptics                       (controller, dt, &{spin slip, brake slip, bumps})
      0x10768B0  r9b = (BYTE)(controller[6]-2) <= 1 / add rcx,0x2E0 / jmp rumble    (controller, dt, &CarIn)
    The slips are normalised by the game: 1 = the tyre's grip limit, more = sliding / locking / spinning (the trigger
-   curves of media\ControllerHaptics.xml start at 1.5). The engine revs: 0 at idle, 1 at the redline. The thunks'
-   first 12 bytes become a jump to ours, which keeps the values and calls the game's function itself. Found by their
-   bytes (the rumble thunk is unique, the haptics one 16 bytes before it). Without them (another build of the game):
-   the triggers use the game's impulse trigger levels as before. */
+   curves of media\ControllerHaptics.xml start at 1.5). The engine revs: 0 at idle, 1 at the redline. Both thunks
+   are hooked through the platform (hook_function, once Extra Options has patched the game): ours keeps the values
+   and goes on into the thunk. Found by their bytes (the rumble thunk is unique, the haptics one 16 bytes before it).
+   Without them: the triggers use the game's impulse trigger levels (wgi.h). */
 #pragma once
 
 typedef struct {
@@ -26,9 +26,9 @@ typedef struct {
     BYTE backfire;        /* 0x32 */
 } CarIn;
 
-typedef void(__fastcall *CarRumbleFn)(void *rumble, float dt, const CarIn *in, BYTE wheel);
-typedef void(__fastcall *CarHapticsFn)(void *haptics, float dt, const float *in);
-static CarRumbleFn g_carRumble;
+typedef void(__fastcall *CarRumbleFn)(BYTE *ctrl, float dt, const CarIn *in);
+typedef void(__fastcall *CarHapticsFn)(BYTE *ctrl, float dt, const float *in);
+static CarRumbleFn g_carRumble;   /* the thunks, as the platform hands them on */
 static CarHapticsFn g_carHaptics;
 
 /* the latest values; written by the game's thread, read by ours (a torn read is harmless) */
@@ -146,7 +146,7 @@ static void __fastcall hk_car_rumble(BYTE *ctrl, float dt, const CarIn *in)
         if (g_wake)
             SetEvent(g_wake);
     }
-    g_carRumble(ctrl + 0x2E0, dt, in, (BYTE)(ctrl[6] - 2) <= 1);
+    g_carRumble(ctrl, dt, in);
 }
 
 /* the slips, smoothed: up in 50 ms, down in 150 ms -- one frame's spike (a kerb, a landing) is not a lock-up */
@@ -165,24 +165,11 @@ static void __fastcall hk_car_haptics(BYTE *ctrl, float dt, const float *in)
         g_carLog.spin = maxf(g_carLog.spin, in[0]);
         g_carLog.brake = maxf(g_carLog.brake, in[1]);
     }
-    g_carHaptics(ctrl + 0x10D0, dt, in);
+    g_carHaptics(ctrl, dt, in);
 }
 
-/* the thunk's first 12 bytes: mov rax, hook / jmp rax */
-static int car_patch(BYTE *at, void *hook)
-{
-    DWORD old;
-    if (!VirtualProtect(at, 12, PAGE_EXECUTE_READWRITE, &old))
-        return 0;
-    at[0] = 0x48, at[1] = 0xB8;
-    *(void **)(at + 2) = hook;
-    at[10] = 0xFF, at[11] = 0xE0;
-    VirtualProtect(at, 12, old, &old);
-    FlushInstructionCache(GetCurrentProcess(), at, 12);
-    return 1;
-}
-
-static int car_install(void)
+/* at the game's code (base: from wait_for_code): both thunks through the platform */
+static int car_install(BYTE *base)
 {
     static const BYTE kRumble[20] = {0x0F, 0xB6, 0x41, 0x06, 0x2C, 0x02, 0x3C, 0x01, 0x41, 0x0F,
                                      0x96, 0xC1, 0x48, 0x81, 0xC1, 0xE0, 0x02, 0x00, 0x00, 0xE9};
@@ -190,26 +177,31 @@ static int car_install(void)
     static const BYTE kRumbleFn[19] = {0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x10, 0x56, 0x48, 0x81,
                                        0xEC, 0xA0, 0x00, 0x00, 0x00, 0x80, 0x79, 0x0C, 0x00};
     static const BYTE kHapticsFn[13] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x83, 0xC1, 0x10};
-    GameImage g;
+    Image g;
     BYTE *r = NULL;
     int n = 0;
-    if (!game_image(&g))
+    if (!image_of(base, &g))
         return 0;
     for (BYTE *p = g.text + 16; p + 24 <= g.textEnd; p++)
         if (*p == 0x0F && !memcmp(p, kRumble, sizeof kRumble))
             r = p, n++;
     BYTE *h = r ? r - 16 : NULL;
     BYTE *rf = r ? rel32(r + 19, 1, 5) : NULL, *hf = h ? rel32(h + 7, 1, 5) : NULL;
-    if (n != 1 || memcmp(h, kHaptics, sizeof kHaptics) || rf < g.text || rf >= g.textEnd || hf < g.text ||
-        hf >= g.textEnd || memcmp(rf, kRumbleFn, sizeof kRumbleFn) || memcmp(hf, kHapticsFn, sizeof kHapticsFn)) {
-        fh2_say("car: the game's feedback code is not as expected (%d found) -- the triggers use the game's impulse "
+    if (n != 1 || memcmp(h, kHaptics, sizeof kHaptics) || !in_range(rf, g.text, g.textEnd) ||
+        !in_range(hf, g.text, g.textEnd) || memcmp(rf, kRumbleFn, sizeof kRumbleFn) || memcmp(hf, kHapticsFn, sizeof kHapticsFn)) {
+        ds_note("car: the game's feedback code is not as expected (%d found) -- the triggers use the game's impulse "
                 "trigger levels only", n);
         return 0;
     }
-    g_carRumble = (CarRumbleFn)rf;
-    g_carHaptics = (CarHapticsFn)hf;
-    if (!car_patch(h, (void *)hk_car_haptics) || !car_patch(r, (void *)hk_car_rumble))
+    FH2Hook *a = g_api->hook_function(g_mod, "car feedback: rumble thunk", r, (void *)hk_car_rumble, (void **)&g_carRumble);
+    FH2Hook *b = g_api->hook_function(g_mod, "car feedback: haptics thunk", h, (void *)hk_car_haptics, (void **)&g_carHaptics);
+    if (!a || !b || !g_api->enable_hooks(g_mod, NULL)) {
+        ds_note("car: the platform did not hook the game's feedback code (see its log) -- the triggers use the game's "
+                "impulse trigger levels only");
+        if (a || b)
+            g_api->disable_hooks(g_mod, NULL);
         return 0;
+    }
     Car.hooked = 1;
     fh2_say("car: the game's feedback data hooked (game+0x%lX, game+0x%lX)", (DWORD)(r - g.base), (DWORD)(h - g.base));
     return 1;

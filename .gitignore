@@ -18,4 +18,3 @@ tools/xrefs.py
 tools/xg/xgprobe.py
 # logs and runtime files
 *.log
-DualSense.cache/
