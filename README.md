@@ -1,8 +1,9 @@
 # FH2-DualSense
 
 **The PlayStation 5 controller for Forza Horizon 2 (Xbox One) on the Azimuth emulator 0.9.10:** the DualSense with
-HD haptics and adaptive triggers driven by the car itself, the light bar and LEDs, gyro steering, and the game's
-button icons with the PlayStation pictures. A mod of the [FH2 Mod Platform](https://github.com/Trinculo54/FH2-Mod-Platform):
+HD haptics and adaptive triggers driven by the car itself and the road under each wheel, PS5-like haptics in the menus
+and for the game's events, the light bar and LEDs, gyro steering, and the game's button icons with the PlayStation
+pictures. A mod of the [FH2 Mod Platform](https://github.com/Trinculo54/FH2-Mod-Platform):
 drop it in, no drivers, no Steam Input, no DS4Windows.
 
 [Русская версия](README.ru.md)
@@ -19,13 +20,31 @@ drop it in, no drivers, no Steam Input, no DS4Windows.
 - **Gyro steering**: the mic button switches it on and off (the mic LED shows it); tilt the controller like a wheel.
 
 ### Vibration
-- **HD haptics over USB**: the game's two rumble motors are played as tones on the DualSense's voice-coil actuators.
+- **HD haptics over USB**: the game's two rumble motors are played as tones on the DualSense's voice-coil actuators,
+  with the mod's own effects mixed in and a soft limiter (strong moments stay round, never clip).
 - **The car in your hands** (from the game's own feedback data): an engine hum that follows the revs, knocking on
-  the rev limiter, a knock at each gear change, the road's roughness.
+  the rev limiter, a knock at each gear change, a sharp impact on crashes.
+- **The road under each wheel** (the game's own surface under every wheel): gravel crunches, dirt and grass rumble
+  softly, sand is grainy, cobbles knock, metal grates buzz, kerbs drum in time with the speed -- each on the side of
+  the car it is under; tarmac stays quiet. A jump lifts the road away; the landing thumps by how long you flew.
 - **Crashes in proportion**: the game shakes the pad at full for any touch of a fence or a bush; here its crash
   rumble grows with the real impact instead.
-- **Bluetooth**: the DualSense's rumble emulation (the improved v2 on firmware 2.24 and later), with gear changes
-  and the rev limiter.
+- **Bluetooth**: the DualSense's rumble emulation (the improved v2 on firmware 2.24 and later), with gear changes,
+  the rev limiter, the road and every effect below as motor pulses.
+
+### Menus and the game's events, felt
+From the game's own interface sounds (every one of them goes through the game's audio engine, which the mod listens
+to), as on a PS5:
+- **Menus**: a crisp tick for every move (on the side you move to), a click with some body for every choice, a softer
+  one going back, two ticks on the side of the bumper changing tabs, a swell as a page or a pop-up opens, two low
+  buzzes when something can't be done.
+- **The tombola's drum** (the prize at each level-up): a tick for every prize passing, about 20 a second at first,
+  slowing down with the drum, a clunk and its bounce as it stops, then the win.
+- **Skills and combos**: a ding for every skill (near misses, drifts, air, ...), rising ticks for a clean streak, a
+  rise for the multiplier, a thud and two bright ticks when the chain is banked, a deflating sweep when it is lost; a
+  skill point, XP, level-ups and prizes celebrate.
+- **Races**: the countdown's ticks and its GO thump, checkpoints, speed traps, overtakes, results; counters running up
+  after a race ratchet until they stop.
 
 ### Adaptive triggers
 The mod reads the data the game computes every frame for its own rumble (engine revs, the tyres' slip front and rear,
@@ -33,10 +52,11 @@ braking and spinning slip, collisions, gear changes) and turns it into trigger e
 
 | | |
 |---|---|
-| **L2, brake** | A brake pedal that gets stiffer towards the end of its travel. When the front tyres reach their grip limit it starts to chatter like a pedal with ABS at work; the deeper the wheels lock, the harder and faster it judders. |
+| **L2, brake** | A brake pedal that gets stiffer towards the end of its travel. Past the front tyres' grip limit: **with ABS** it pulses like a pedal with the ABS at work (about 14 strokes a second, harder the deeper into the slip); **without ABS** the tyres scrub, and a locked wheel makes the pedal go hard where your finger is, juddering slowly. The mod tells which by the brakes themselves: a wheel locking under firm braking means no ABS, three hard stops at the limit without one mean ABS (shown on the DualSense page). |
 | **R2, throttle** | A light constant resistance. Vibrates with wheel spin, stronger the more the wheels spin. Knocks on the rev limiter. |
 | **Gear change** | A short knock on the trigger you are pressing: R2 on the way up, L2 when shifting down under braking. |
-| **Crash** | A jolt in both triggers that fades, by the strength of the impact: a scrape or a bush lightly, a pole or a wall at speed hard. |
+| **Crash, landing** | A jolt in both triggers that fades, by the strength of the impact: a scrape or a bush lightly, a pole or a wall at speed hard; a landing by how long the car flew. |
+| **The road** | Its texture in the trigger you press: gravel buzzes, dirt and grass roll, kerbs knock in time with the speed (the brake a little lighter). |
 | **Menus, pause, loading** | The triggers are free. |
 
 If the car data is not found, the triggers follow the game's own Xbox One impulse trigger levels, which Azimuth
@@ -50,12 +70,22 @@ own `DualSense.icons` (a zip of PNGs with the same names and sizes) in the mod's
 ### Light bar and LEDs
 - Light bar modes: **Rumble** (a colour flashing with impacts and sliding tyres), **Revs** (turns red towards the
   redline, flashes on the limiter), **Static**, **Battery**, **Off**. Low battery blinks red.
-- The five player LEDs work as a **rev counter** while driving.
+- The five player LEDs work as a **rev counter** while driving, and show the **skill combo**: a light more for every
+  skill in the chain, all five blinking when it is banked, the middle one when it is lost.
+
+### The DualSense page
+**MODS > Installed mods > DualSense** (platform 2.7.0): the controller's model, connection (USB or Bluetooth),
+charge, firmware (the update version a PS5 shows, the firmware and hardware versions, the build date), how it
+vibrates; what the mod reads from the game (the car's data, the surface under the wheels, the interface sounds, ABS
+as the brakes show it); and three tests on A: **the vibration** (left, right, the menu's ticks from left to right, a
+click, a counter, a landing), **the triggers** (press L2 and R2: the pedals, ABS, a locked wheel, wheel spin, gravel, a
+kerb, gear changes, 1.5 seconds each) and **the lights**.
 
 ### In the game's settings
 **Pause > Settings > MODS** has the mod's main switches, in English or Russian (the game's language): *Adaptive
-triggers*, *Trigger strength*, *Vibration*, *HD haptics (USB)*, *Engine feel*, *Gyro steering*, *Light bar*,
-*Rev counter lights*, *PlayStation button icons*, *Check for updates*. A change works at once (the icons from the next
+triggers*, *Trigger strength*, *Vibration*, *HD haptics (USB)*, *Engine feel*, *Menu haptics*, *Game events*,
+*Road surface*, *Gyro steering*, *Light bar*, *Rev counter lights*, *Combo on the player lights*, *PlayStation button
+icons*, *Check for updates*. A change works at once (the icons from the next
 start) and is saved to `DualSense.ini`.
 
 ---
@@ -63,7 +93,8 @@ start) and is saved to `DualSense.ini`.
 ## Requirements
 - Windows 10 or 11, x64.
 - Forza Horizon 2 for Xbox One (1.0.0.64) running on **Azimuth 0.9.10**. Neither is included; use your own copy.
-- The **FH2 Mod Platform** 2.3.0 or newer (2.7.0 in the release zip: `d3dcompiler_47.dll` next to `azimuth.exe`).
+- The **FH2 Mod Platform** 2.3.0 or newer; the road surfaces need 2.6.0, the DualSense page 2.7.0 (2.7.0 in the release
+  zip: `d3dcompiler_47.dll` next to `azimuth.exe`).
 - [Forza Horizon 2 Extra Options](https://github.com/RokkuDayo/ForzaHorizon2_ExtraOptions) for the PlayStation icons
   (the platform hands the game's files over through its `mediaoverride`). Everything else works without it.
 
@@ -99,9 +130,9 @@ Every setting is explained in the file itself. In short:
 | Section | What is there |
 |---|---|
 | `[DualSense]` | The DualSense on/off, Japanese layout (Circle confirms), what the touchpad click, Create, the Edge paddles and Fn buttons do, touchpad swipes, the PS button, the Mods page's language, update checks. |
-| `[Vibration]` | `Mode` = Auto / Audio (HD haptics) / Rumble / Off, `Strength`, the haptic tones, `Car` = how much of the engine, rev limiter and gear changes you feel, `Collisions` = the crash rumble. |
+| `[Vibration]` | `Mode` = Auto / Audio (HD haptics) / Rumble / Off, `Strength`, the haptic tones, `Car` = how much of the engine, rev limiter and gear changes you feel, `Collisions` = the crash rumble, `Menus`, `Events`, `Surface` = the menus' ticks, the game's events, the road (percent, 0 = off). |
 | `[Triggers]` | `Enabled`, `Mode` = Game / ResistanceOnly / Off, `Strength`, the brake pedal's shape (`BrakeResistance`, `BrakeStart`, `BrakeForceStart`, `BrakeForceEnd`), the throttle's resistance, vibration frequencies, where the triggers start to vibrate (`BrakeSlipStart`, `SpinSlipStart`, in percent of the grip limit), `GearChangeKick`, `RevLimiter`, `CrashJolt`, `FreeInMenus`. |
-| `[Lightbar]` | `Mode`, `Color`, `FlashColor`, `Brightness`, `LowBatteryBlink`, `RevLights`. |
+| `[Lightbar]` | `Mode`, `Color`, `FlashColor`, `Brightness`, `LowBatteryBlink`, `RevLights`, `ComboLights`. |
 | `[Icons]` | `PlayStation` = Auto (a DualSense at the game's start) / On / Off. |
 | `[Gyro]` | `Steering` = Toggle (mic button) / On / Off, `MaxAngle`, `Invert`. |
 
@@ -136,7 +167,10 @@ build.cmd install    also copies it into %FH2_GAME%\Azimuth\fh2-mods
 |---|---|
 | `DualSense\DualSense.c` | the controller: input, vibration, HD haptics, adaptive triggers, lights; the Mods page; the start (`fh2mod_init`) |
 | `DualSense\wgi.h` | the DualSense as one of the PC's gamepads for Azimuth 0.9.10 |
-| `DualSense\car.h` | the car's data from the game |
+| `DualSense\car.h` | the car's data from the game: revs, slips, crashes, the surface under each wheel, jumps, ABS |
+| `DualSense\fx.h` | the haptic effects (ticks, thumps, sweeps, the tombola's drum) for HD haptics and the rumble emulation |
+| `DualSense\sounds.h` | the game's interface sounds as haptics; the skill combo |
+| `DualSense\page.h` | the DualSense page: the controller's state, the tests |
 | `DualSense\icons.h` | the PlayStation icons; `texture.h`, `bc7.h`, `png.h`, `inflate.h`, `tables.h`: textures, decoders |
 | `DualSense\base.h` | the mod's folder, log, ini, the images |
 | `platform\` | the FH2 Mod Platform's API header |
@@ -158,6 +192,18 @@ checked before it is used, and when something is not as expected, the log says s
   `wait_for_code`), which keeps the values and goes on into the game. Crashes are scaled logarithmically between
   "felt" and "a big one" per kind (cars 10..400, walls 25..375, objects 0.8..30, measured in the game) and fade in
   90 ms; the slips are smoothed. The game's own crash rumble curves are set to the same scale in its memory.
+- **The road**: in the same feedback update the game goes over the four wheels for their surfaces' bumpiness: a
+  wheel's contact (none: in the air) holds its surface's number in the game's table of surfaces (game+0x365D6F8: a
+  vector of 0x1F0-byte records, the name first, from `media\physics\surfaceTypes.xml`). An instruction hook there
+  (`hook_instruction`, game+0x2FDF0F) reads every wheel's number and the car's speed (xmm12, m/s); the names give
+  the kinds (RumbleStrip*, Gravel*, Dirt*, Grass*, Cobblestone*, ...).
+- **Interface sounds**: every interface sound (`media\audio\ui\UI4Audio.xml`'s triggers) is played by an object of
+  the game's audio engine, `AudioObjectUIEvent` (its methods at 0x100ED70 and 0x100ED00, `(this, const std::string
+  &trigger, ...)`), and stopped by the engine's 0x10229B0 -- whether the game's code asks for it or a XAML
+  storyboard (`local:AudioEvent`, as the tombola's). The three are hooked; the trigger's name picks the feel. The
+  tombola's drum (`A_Tombola.xaml`: 40040 px in 7 s, PowerEase EaseOut, the spin sound at 0.7 s) is modelled to
+  tick for every prize passing.
+- **The DualSense page**: the platform's pages (`add_page`, `set_page_rows`, API 8).
 - **Icons**: every icon of `ControllerIcons.zip`, `Help_Buttons.zip` and `UI_Symbols.zip` that has a PlayStation
   picture is re-encoded as the game's texture (RGBA, 1D tiling) and handed over with the platform's `set_file`.
 - **Settings**: the platform's Mods page rows (`add_setting`), saved to the mod's ini.

@@ -8,7 +8,7 @@
 #include <string.h>
 #include "../platform/fh2mod.h"
 
-#define DS_VERSION "2.0.0"
+#define DS_VERSION "2.1.0"
 #ifndef FH2MOD_PLATFORM_VERSION
 #define FH2MOD_PLATFORM_VERSION "2.7.0" /* the platform the release ships (platform\fh2mod.h is its header) */
 #endif
@@ -240,3 +240,42 @@ static int image_of(BYTE *b, Image *m)
 static BYTE *rel32(BYTE *insn, int dispAt, int len) { return insn + len + *(INT32 *)(insn + dispAt); }
 
 static int in_range(const void *p, const BYTE *lo, const BYTE *hi) { return (const BYTE *)p >= lo && (const BYTE *)p < hi; }
+
+static int hex_digit(char c) { return c >= '0' && c <= '9' ? c - '0' : (c | 32) >= 'a' && (c | 32) <= 'f' ? (c | 32) - 'a' + 10 : -1; }
+
+/* the one place in [lo, hi) with these bytes ("48 8B 0D ?? ?? ?? ?? E8": ?? = any byte; the first one fixed): NULL when
+   there is none or more than one (*count: how many) */
+static BYTE *find_unique(BYTE *lo, BYTE *hi, const char *pattern, int *count)
+{
+    BYTE v[128], m[128];
+    int n = 0, c = 0;
+    BYTE *found = NULL;
+    for (const char *p = pattern; *p && n < 128;) {
+        if (*p == ' ') {
+            p++;
+        } else if (*p == '?') {
+            v[n] = 0, m[n++] = 0;
+            p += p[1] == '?' ? 2 : 1;
+        } else if (hex_digit(p[0]) >= 0 && hex_digit(p[1]) >= 0) {
+            v[n] = (BYTE)(hex_digit(p[0]) << 4 | hex_digit(p[1])), m[n++] = 1;
+            p += 2;
+        } else
+            return NULL;
+    }
+    if (count)
+        *count = 0;
+    if (!n || !m[0] || !lo || hi < lo + n)
+        return NULL;
+    for (BYTE *q = lo; q + n <= hi; q++) {
+        if (*q != v[0])
+            continue;
+        int i = 1;
+        while (i < n && (!m[i] || q[i] == v[i]))
+            i++;
+        if (i == n && !c++)
+            found = q;
+    }
+    if (count)
+        *count = c;
+    return c == 1 ? found : NULL;
+}
