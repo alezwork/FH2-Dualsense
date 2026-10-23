@@ -1,17 +1,19 @@
-/* files.h -- the game's files the mod changes, made here and given to the game in place of its own:
-     media\UI.zip                                the controller settings page with the DualSense's section (menu.h)
-     media\stripped\stringtables\<lang>.zip      MyProfile.str with the section's texts, in every language the game has
-     media\ui\textures\data_bound\ControllerIcons.zip, Help_Buttons.zip, UI_Symbols.zip
-                                                 the button icons and the controller drawing with the PlayStation
-                                                 pictures ([Icons] PlayStation)
-     media\zipmanifest.xml                       the new directories of those archives (the game finds a zip's entries
-                                                 through it, not through the zip's own end record)
-   The game's own files are left as they are. The copies are made into DualSense\cache\ next to azimuth.exe once (the
-   next starts only check that the game's files and the settings that shape them are the same: cache\key.txt), and
-   Azimuth is given them when it opens, looks up or lists the game's: its imports of CreateFileW, GetFileAttributesW,
-   GetFileAttributesExW and FindFirstFileExW go through ours first (hooks.h). A copy is only given while the game's
-   file is the size it was made from. The string table the game opens tells the game's language (menu.h's status).
-   Entries the mod adds or changes are stored uncompressed; the rest are copied as they are, compressed. */
+/* files.h -- the game's files the mod changes, given to the game through Extra Options' media overrides: the game
+   reads <game folder>\Mount\mediaoverride\<path> in place of media\<path>, a zip standing for a folder of its name
+   (FH2_ExtraOptions.ini: [Files] EnableMediaOverrides=1). The mod writes there
+     UI\Scenes\Anthem\A_ControllerOptions.xaml          the controller settings page with the DualSense's section
+                                                        (from media\UI.zip; menu.h)
+     stripped\stringtables\<lang>\MyProfile.str         the section's texts, in every language the game has (from
+                                                        media\stripped\stringtables\<lang>.zip)
+     ui\textures\data_bound\<archive>\...\<icon>.swatchbin
+                                                        the button icons and the controller drawing with the
+                                                        PlayStation pictures ([Icons] PlayStation; from
+                                                        ControllerIcons.zip, Help_Buttons.zip and UI_Symbols.zip)
+   made from the game's own (which are left as they are) as the mod starts, before Play is pressed; the next starts
+   only check that the game's files, this DLL and the settings that shape them are the same (DualSense\cache\key.txt)
+   and that the files are still there. What the mod wrote is listed in DualSense\mediaoverride.txt with each file's
+   size and CRC-32: a file in its place that is not the mod's (another mod's, or changed by hand) is left alone, and
+   the mod's own are taken away when they are no longer wanted ([Icons] PlayStation=Off, [DualSense] Enabled=0). */
 #pragma once
 #include "inflate.h"
 #include "texture.h"
@@ -106,60 +108,6 @@ static BYTE *zip_read(const BYTE *z, const ZEnt *e)
     }
     b[e->usize] = 0;
     return b;
-}
-
-/* an entry of the archive to make: the game's (compressed, as it is) or ours (stored) */
-typedef struct {
-    const char *name;
-    WORD method;
-    DWORD crc, usize, len;
-    const BYTE *data;
-    int ours; /* data is ours to free */
-} ZOut;
-
-/* the archive, laid out as the game's are (each central entry with the game's extra field 0x1123: where its data
-   starts); dir: the central directory's start, its size with the end record, its entries (zipmanifest.xml's) */
-static BYTE *zip_build(const ZOut *o, int n, DWORD *outLen, DWORD dir[3])
-{
-    size_t size = 22;
-    for (int i = 0; i < n; i++)
-        size += 30 + 46 + 8 + 2 * strlen(o[i].name) + o[i].len;
-    BYTE *z = (BYTE *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size), *p = z;
-    DWORD *offs = (DWORD *)HeapAlloc(GetProcessHeap(), 0, (n + 1) * 2 * sizeof(DWORD));
-    if (!z || !offs)
-        return NULL;
-    for (int i = 0; i < n; i++) {
-        WORD nl = (WORD)strlen(o[i].name);
-        offs[2 * i] = (DWORD)(p - z);
-        *(DWORD *)p = 0x04034B50, *(WORD *)(p + 4) = 10, *(WORD *)(p + 8) = o[i].method;
-        *(DWORD *)(p + 14) = o[i].crc, *(DWORD *)(p + 18) = o[i].len, *(DWORD *)(p + 22) = o[i].usize;
-        *(WORD *)(p + 26) = nl;
-        memcpy(p + 30, o[i].name, nl);
-        p += 30 + nl;
-        offs[2 * i + 1] = (DWORD)(p - z);
-        memcpy(p, o[i].data, o[i].len);
-        p += o[i].len;
-    }
-    DWORD cd = (DWORD)(p - z);
-    for (int i = 0; i < n; i++) {
-        WORD nl = (WORD)strlen(o[i].name);
-        *(DWORD *)p = 0x02014B50, *(WORD *)(p + 4) = 10, *(WORD *)(p + 6) = 10, *(WORD *)(p + 10) = o[i].method;
-        *(DWORD *)(p + 16) = o[i].crc, *(DWORD *)(p + 20) = o[i].len, *(DWORD *)(p + 24) = o[i].usize;
-        *(WORD *)(p + 28) = nl, *(WORD *)(p + 30) = 8;
-        *(DWORD *)(p + 42) = offs[2 * i];
-        memcpy(p + 46, o[i].name, nl);
-        p += 46 + nl;
-        *(WORD *)p = 0x1123, *(WORD *)(p + 2) = 4, *(DWORD *)(p + 4) = offs[2 * i + 1];
-        p += 8;
-    }
-    DWORD cdSize = (DWORD)(p - z) - cd;
-    *(DWORD *)p = 0x06054B50, *(WORD *)(p + 8) = (WORD)n, *(WORD *)(p + 10) = (WORD)n;
-    *(DWORD *)(p + 12) = cdSize, *(DWORD *)(p + 16) = cd;
-    p += 22;
-    HeapFree(GetProcessHeap(), 0, offs);
-    *outLen = (DWORD)(p - z);
-    dir[0] = cd, dir[1] = cdSize + 22, dir[2] = (DWORD)n;
-    return z;
 }
 
 /* ---- string tables ("LSB2": media\stripped\stringtables\<lang>.zip\<Table>.str) ----
@@ -393,7 +341,7 @@ static int ds_present(void)
 }
 
 /* ================================================================================================================ */
-/* the archives the mod makes                                                                                       */
+/* the archives the mod changes entries of                                                                          */
 #define ARCH_UI 0
 #define ARCH_STR 1 /* the string tables: menu.h's kLocZip, in its order */
 #define ARCH_ICONS (ARCH_STR + LOC_ZIPS)
@@ -412,19 +360,11 @@ static void arch_rel(int a, char *rel, int n)
     rel[n - 1] = 0;
 }
 
-typedef struct {
-    WCHAR suffix[96];     /* media\<rel> */
-    WCHAR file[MAX_PATH]; /* what the game gets instead */
-    DWORD size;           /* the game's own file has this size */
-    int state;            /* 0 not seen, 1 given, -1 the game's file is another one */
-} Served;
-static Served g_served[NARCH + 1];
-static int g_nserved;
-static SRWLOCK g_servedLock = SRWLOCK_INIT;
-static WCHAR g_media[MAX_PATH]; /* <game folder>\Mount\media\ */
-static WCHAR g_cache[MAX_PATH]; /* <Azimuth>\DualSense\cache\ */
-static int g_iconsOn;           /* the PlayStation pictures this time */
-static int g_textsOk;           /* every language's MyProfile.str has the section's texts */
+static WCHAR g_media[MAX_PATH];    /* <game folder>\Mount\media\ */
+static WCHAR g_override[MAX_PATH]; /* <game folder>\Mount\mediaoverride\ (Extra Options') */
+static WCHAR g_cache[MAX_PATH];    /* <Azimuth>\DualSense\cache\ */
+static int g_iconsOn;              /* the PlayStation pictures this time */
+static int g_textsOk;              /* every language's MyProfile.str has the section's texts */
 
 /* the game's folder, from Azimuth's data\azimuth.ini ([title-1a96545b] folder=, else FH2 next to azimuth.exe) */
 static int find_media(void)
@@ -454,6 +394,10 @@ static int find_media(void)
         lstrcatW(probe, L"zipmanifest.xml");
         if (GetFileAttributesW(probe) != INVALID_FILE_ATTRIBUTES) {
             lstrcpyW(g_media, cand[i]);
+            /* mediaoverride\ beside media\ (the game's game:\ is the folder of its exe) */
+            lstrcpyW(g_override, g_media);
+            g_override[lstrlenW(g_override) - 6] = 0;
+            lstrcatW(g_override, L"mediaoverride\\");
             return 1;
         }
     }
@@ -471,26 +415,179 @@ static void stamp(const WCHAR *path, char *out, int n)
     out[n - 1] = 0;
 }
 
-static DWORD file_size(const WCHAR *path)
-{
-    WIN32_FILE_ATTRIBUTE_DATA a;
-    return GetFileAttributesExW(path, GetFileExInfoStandard, &a) && !a.nFileSizeHigh ? a.nFileSizeLow : 0;
-}
-
 static char *menu_xaml(const char *text, size_t len, size_t *outLen);
 static const char *const *menu_keys(int *n);
 static const char *const *menu_texts(int lang);
 
-/* archive a made into the cache; dir: for the manifest. 1 made, 0 not needed or not made */
-static int arch_make(int a, DWORD dir[3])
+/* ---- what the mod wrote into mediaoverride\ (DualSense\mediaoverride.txt: "<size> <crc32> <path>" a line) ---- */
+typedef struct {
+    char rel[200]; /* below mediaoverride\ */
+    DWORD size, crc;
+} OvFile;
+typedef struct {
+    OvFile *f;
+    int n, cap;
+} OvList;
+static OvList g_ovOld, g_ovNew; /* listed before; written (or kept) now */
+static WCHAR g_ovList[MAX_PATH];
+
+static int ov_add(OvList *l, const char *rel, DWORD size, DWORD crc)
 {
-    char rel[160], base[64];
-    WCHAR wrel[160], path[MAX_PATH], out[MAX_PATH];
+    if (l->n == l->cap) {
+        int cap = l->cap ? l->cap * 2 : 64;
+        OvFile *f = (OvFile *)(l->f ? HeapReAlloc(GetProcessHeap(), 0, l->f, cap * sizeof *f)
+                                    : HeapAlloc(GetProcessHeap(), 0, cap * sizeof *f));
+        if (!f)
+            return 0;
+        l->f = f, l->cap = cap;
+    }
+    lstrcpynA(l->f[l->n].rel, rel, sizeof l->f[0].rel);
+    l->f[l->n].size = size, l->f[l->n].crc = crc;
+    l->n++;
+    return 1;
+}
+
+static const OvFile *ov_find(const OvList *l, const char *rel)
+{
+    for (int i = 0; i < l->n; i++)
+        if (!lstrcmpiA(l->f[i].rel, rel))
+            return &l->f[i];
+    return NULL;
+}
+
+/* how many listed files are below the folder (prefix: "stripped\stringtables\", ...) */
+static int ov_count(const OvList *l, const char *prefix)
+{
+    int c = 0, k = lstrlenA(prefix);
+    for (int i = 0; i < l->n; i++)
+        c += !_strnicmp(l->f[i].rel, prefix, k);
+    return c;
+}
+
+static void ov_path(const char *rel, WCHAR *out)
+{
+    WCHAR w[200];
+    MultiByteToWideChar(CP_UTF8, 0, rel, -1, w, 200);
+    lstrcpyW(out, g_override);
+    if (lstrlenW(out) + lstrlenW(w) < MAX_PATH)
+        lstrcatW(out, w);
+}
+
+/* the file is there as the mod left it (its size and CRC as listed) */
+static int ov_intact(const OvFile *f)
+{
+    WCHAR p[MAX_PATH];
     DWORD len = 0;
-    int n, changed = 0, keysN = 0;
+    BYTE *b;
+    int same;
+    ov_path(f->rel, p);
+    b = load_file(p, &len);
+    same = b && len == f->size && crc32(0, b, len) == f->crc;
+    if (b)
+        HeapFree(GetProcessHeap(), 0, b);
+    return same;
+}
+
+static void ov_load(void)
+{
+    DWORD len = 0;
+    char *t = (char *)load_file(g_ovList, &len), *p = t;
+    g_ovOld.n = 0;
+    while (p && *p) {
+        char *end = strchr(p, '\n'), *q;
+        if (end)
+            *end = 0;
+        DWORD size = strtoul(p, &q, 10), crc = strtoul(q, &q, 16);
+        while (*q == ' ')
+            q++;
+        for (char *r = q + lstrlenA(q); r > q && (r[-1] == '\r' || r[-1] == ' '); r--)
+            r[-1] = 0;
+        if (*q && !strstr(q, "..") && !strchr(q, ':') && *q != '\\' && *q != '/') /* below mediaoverride\ only */
+            ov_add(&g_ovOld, q, size, crc);
+        p = end ? end + 1 : NULL;
+    }
+    if (t)
+        HeapFree(GetProcessHeap(), 0, t);
+}
+
+static void ov_save(const OvList *l)
+{
+    char *t = (char *)HeapAlloc(GetProcessHeap(), 0, (size_t)l->n * 240 + 1), *p = t;
+    if (!t)
+        return;
+    for (int i = 0; i < l->n; i++)
+        p += wsprintfA(p, "%lu %08lX %s\r\n", l->f[i].size, l->f[i].crc, l->f[i].rel);
+    if (l->n)
+        save_file(g_ovList, t, (DWORD)(p - t));
+    else
+        DeleteFileW(g_ovList);
+    HeapFree(GetProcessHeap(), 0, t);
+}
+
+/* the folders down to a file's made */
+static void make_dirs(const WCHAR *file)
+{
+    WCHAR p[MAX_PATH];
+    int root = lstrlenW(g_override) - 1;
+    lstrcpyW(p, file);
+    for (int i = root; p[i]; i++)
+        if (p[i] == '\\') {
+            p[i] = 0;
+            CreateDirectoryW(p, NULL);
+            p[i] = '\\';
+        }
+}
+
+/* one file for the game, below mediaoverride\ -- unless a file there is not the mod's; 1 when it is there now */
+static int ov_put(const char *rel, const void *data, DWORD len)
+{
+    WCHAR p[MAX_PATH];
+    const OvFile *old = ov_find(&g_ovOld, rel);
+    ov_path(rel, p);
+    if (GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES && !(old && ov_intact(old))) {
+        fh2_say("files: mediaoverride\\%s is not the mod's (another mod's, or changed by hand) -- left as it is", rel);
+        return 0;
+    }
+    make_dirs(p);
+    if (!save_file(p, data, len)) {
+        fh2_say("files: mediaoverride\\%s could not be written (error %lu)", rel, GetLastError());
+        return 0;
+    }
+    return ov_add(&g_ovNew, rel, len, crc32(0, (const BYTE *)data, len));
+}
+
+/* the mod's files of before that it does not give now: away, if they are still as it left them, with the folders
+   they leave empty (mediaoverride\ itself stays) */
+static int ov_drop_old(void)
+{
+    int n = 0, root = lstrlenW(g_override) - 1;
+    for (int i = 0; i < g_ovOld.n; i++) {
+        WCHAR p[MAX_PATH];
+        if (ov_find(&g_ovNew, g_ovOld.f[i].rel) || !ov_intact(&g_ovOld.f[i]))
+            continue;
+        ov_path(g_ovOld.f[i].rel, p);
+        if (!DeleteFileW(p))
+            continue;
+        n++;
+        for (int k = lstrlenW(p); k > root; k--)
+            if (p[k] == '\\') {
+                p[k] = 0;
+                if (!RemoveDirectoryW(p)) /* not empty */
+                    break;
+            }
+    }
+    return n;
+}
+
+/* archive a's entries that the mod changes, made and given to the game; how many */
+static int arch_give(int a)
+{
+    char rel[160], dir[160], base[64];
+    WCHAR wrel[160], path[MAX_PATH];
+    DWORD len = 0;
+    int n, given = 0, keysN = 0;
     BYTE *z;
     ZEnt *e = NULL;
-    ZOut *o;
     arch_rel(a, rel, sizeof rel);
     MultiByteToWideChar(CP_UTF8, 0, rel, -1, wrel, 160);
     lstrcpyW(path, g_media);
@@ -503,15 +600,18 @@ static int arch_make(int a, DWORD dir[3])
             HeapFree(GetProcessHeap(), 0, z);
         return 0;
     }
-    lstrcpynA(base, strrchr(rel, '\\') ? strrchr(rel, '\\') + 1 : rel, sizeof base);
-    *strrchr(base, '.') = 0;
-    o = (ZOut *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (n + 1) * sizeof *o);
+    lstrcpynA(dir, rel, sizeof dir);
+    *strrchr(dir, '.') = 0; /* the zip as a folder */
+    lstrcpynA(base, strrchr(dir, '\\') ? strrchr(dir, '\\') + 1 : dir, sizeof base);
     const char *const *keys = menu_keys(&keysN);
-    for (int k = 0; o && k < n; k++) {
-        ZOut *q = &o[k];
+    for (int k = 0; k < n; k++) {
+        char out[200];
         BYTE *raw = NULL;
-        q->name = e[k].name, q->method = e[k].method, q->crc = e[k].crc, q->usize = e[k].usize, q->len = e[k].csize;
-        q->data = z + e[k].dataOff;
+        _snprintf(out, sizeof out - 1, "%s\\%s", dir, e[k].name);
+        out[sizeof out - 1] = 0;
+        for (char *q = out; *q; q++)
+            if (*q == '/')
+                *q = '\\';
         if (a == ARCH_UI) { /* the controller settings page with the DualSense's section */
             size_t nl = 0;
             char *t;
@@ -520,8 +620,8 @@ static int arch_make(int a, DWORD dir[3])
             raw = zip_read(z, &e[k]);
             t = raw ? menu_xaml((char *)raw, e[k].usize, &nl) : NULL;
             if (t) {
-                q->method = 0, q->usize = q->len = (DWORD)nl, q->crc = crc32(0, (BYTE *)t, nl), q->data = (BYTE *)t, q->ours = 1;
-                changed++;
+                given += ov_put(out, t, (DWORD)nl);
+                HeapFree(GetProcessHeap(), 0, t);
             } else
                 fh2_say("files: the controller settings page is not as expected -- no DualSense section in it");
         } else if (a < ARCH_ICONS) { /* a string table: the section's texts in its language */
@@ -535,8 +635,8 @@ static int arch_make(int a, DWORD dir[3])
             if (added < 0)
                 fh2_say("files: media\\%s: MyProfile.str is not as expected -- the section's texts not in it", rel);
             if (t) {
-                q->method = 0, q->usize = q->len = (DWORD)nl, q->crc = crc32(0, (BYTE *)t, nl), q->data = (BYTE *)t, q->ours = 1;
-                changed++;
+                given += ov_put(out, t, (DWORD)nl);
+                HeapFree(GetProcessHeap(), 0, t);
             }
         } else { /* the icons: the PlayStation pictures */
             char png[240], nm[160];
@@ -561,8 +661,8 @@ static int arch_make(int a, DWORD dir[3])
             }
             enc = ps ? tex_encode(raw, w, h, ps, 0, &el) : NULL;
             if (enc) {
-                q->method = 0, q->usize = q->len = (DWORD)el, q->crc = crc32(0, enc, el), q->data = enc, q->ours = 1;
-                changed++;
+                given += ov_put(out, enc, (DWORD)el);
+                HeapFree(GetProcessHeap(), 0, enc);
             } else
                 fh2_say("icons: %s %s: %s", base, e[k].name, !xb ? "not a picture this DLL reads" : "no picture");
             if (ps)
@@ -573,128 +673,54 @@ static int arch_make(int a, DWORD dir[3])
         if (raw)
             HeapFree(GetProcessHeap(), 0, raw);
     }
-    int ok = 0;
-    if (o && changed) {
-        DWORD ol = 0;
-        BYTE *made = zip_build(o, n, &ol, dir);
-        lstrcpyW(out, g_cache);
-        lstrcatW(out, wrel[0] && wcsrchr(wrel, '\\') ? wcsrchr(wrel, '\\') + 1 : wrel);
-        ok = made && save_file(out, made, ol);
-        if (made)
-            HeapFree(GetProcessHeap(), 0, made);
-        if (!ok)
-            fh2_say("files: media\\%s: the copy could not be written", rel);
-        else if (a == ARCH_UI || a >= ARCH_ICONS)
-            fh2_say("files: media\\%s: %d of %d entries changed, %lu bytes", rel, changed, n, ol);
-    }
-    for (int k = 0; o && k < n; k++)
-        if (o[k].ours)
-            HeapFree(GetProcessHeap(), 0, (void *)o[k].data);
-    if (o)
-        HeapFree(GetProcessHeap(), 0, o);
+    if (a == ARCH_UI || a >= ARCH_ICONS)
+        fh2_say("files: media\\%s: %d of its %d files to the game", rel, given, n);
     HeapFree(GetProcessHeap(), 0, e);
     HeapFree(GetProcessHeap(), 0, z);
-    return ok;
+    return given;
 }
 
-/* the game's zipmanifest.xml with the new directories of the archives made */
-static int manifest_make(DWORD dirs[][3], const int *made)
-{
-    WCHAR path[MAX_PATH], out[MAX_PATH];
-    DWORD len = 0;
-    char *t, *text;
-    size_t tl;
-    lstrcpyW(path, g_media);
-    lstrcatW(path, L"zipmanifest.xml");
-    t = (char *)load_file(path, &len);
-    if (!t)
-        return 0;
-    tl = len;
-    text = (char *)HeapAlloc(GetProcessHeap(), 0, len + 64 * NARCH + 64);
-    if (!text)
-        return 0;
-    memcpy(text, t, len + 1);
-    HeapFree(GetProcessHeap(), 0, t);
-    for (int a = 0; a < NARCH; a++) {
-        char key[200], low[160], line[600], tail[256], *at = NULL, *end, *ds, *de;
-        int keep;
-        size_t ll, old;
-        if (!made[a])
-            continue;
-        arch_rel(a, low, sizeof low);
-        CharLowerA(low);
-        wsprintfA(key, "path=\"game:\\media\\%s\"", low);
-        for (char *p = text; *p && !at; p++)
-            if (!_strnicmp(p, key, strlen(key)))
-                at = p;
-        end = at ? strchr(at, '>') : NULL;
-        ds = at ? strstr(at, "dirstart=\"") : NULL, de = at ? strstr(at, "direntries=\"") : NULL;
-        if (!end || !ds || ds > end || !de || de > end) {
-            HeapFree(GetProcessHeap(), 0, text);
-            fh2_say("files: zipmanifest.xml has no %s", low);
-            return 0;
-        }
-        de = strchr(de + 12, '"');
-        keep = (int)(ds - at);
-        lstrcpynA(tail, de + 1, (int)(end - de) < 255 ? (int)(end - de) : 255);
-        memcpy(line, at, keep);
-        wsprintfA(line + keep, "dirstart=\"%lu\" dirsize=\"%lu\" direntries=\"%lu\"%s", dirs[a][0], dirs[a][1], dirs[a][2], tail);
-        ll = strlen(line), old = (size_t)(end - at);
-        memmove(at + ll, end, tl - (size_t)(end - text) + 1);
-        memcpy(at, line, ll);
-        tl = tl - old + ll;
-    }
-    lstrcpyW(out, g_cache);
-    lstrcatW(out, L"zipmanifest.xml");
-    int ok = save_file(out, text, (DWORD)tl);
-    HeapFree(GetProcessHeap(), 0, text);
-    return ok;
-}
-
-/* one file the game gets in place of its own */
-static void serve(const char *rel, const WCHAR *cacheName)
-{
-    Served *s;
-    WCHAR wrel[160], path[MAX_PATH];
-    if (g_nserved >= (int)(sizeof g_served / sizeof g_served[0]))
-        return;
-    s = &g_served[g_nserved];
-    ZeroMemory(s, sizeof *s);
-    MultiByteToWideChar(CP_UTF8, 0, rel, -1, wrel, 160);
-    lstrcpyW(s->suffix, L"media\\");
-    lstrcatW(s->suffix, wrel);
-    lstrcpyW(path, g_media);
-    lstrcatW(path, wrel);
-    s->size = file_size(path);
-    lstrcpyW(s->file, g_cache);
-    lstrcatW(s->file, cacheName);
-    if (s->size && GetFileAttributesW(s->file) != INVALID_FILE_ATTRIBUTES)
-        g_nserved++;
-}
-
-/* all of it, once (the mod's start, or the game's first file open, whichever comes first) */
-static BOOL CALLBACK files_build(PINIT_ONCE once, PVOID param, PVOID *ctx)
+/* all of it, as the mod starts -- before Play is pressed, so before the game reads its menus, string tables and
+   icons. on = 0 ([DualSense] Enabled=0): the mod's files are taken away, the game gets its own */
+static void files_build(int on)
 {
     char key[8192], st[64], rel[160];
     WCHAR keyPath[MAX_PATH], path[MAX_PATH], wrel[160];
-    DWORD dirs[NARCH][3], klen = 0;
-    int made[NARCH], any = 0, have = 1;
+    DWORD klen = 0;
+    int have, overrides, dropped;
     double t0 = fh2_now();
-    (void)once, (void)param, (void)ctx;
     if (!find_media()) {
         ds_note("files: the game's folder is not in Azimuth's data\\azimuth.ini -- the game's own menus and icons");
-        return TRUE;
+        return;
     }
     fh2_say_w("files: the game's media: ", g_media);
     lstrcpyW(g_cache, g_dir);
     lstrcatW(g_cache, L"cache\\");
     CreateDirectoryW(g_cache, NULL);
+    lstrcpyW(keyPath, g_cache);
+    lstrcatW(keyPath, L"key.txt");
+    lstrcpyW(g_ovList, g_dir);
+    lstrcatW(g_ovList, L"mediaoverride.txt");
+    ov_load();
+    if (!on) {
+        dropped = ov_drop_old();
+        ov_save(&g_ovNew);
+        DeleteFileW(keyPath);
+        if (dropped)
+            ds_note("files: the mod's %d files taken out of mediaoverride -- the game's own menus and icons", dropped);
+        return;
+    }
+    CreateDirectoryW(g_override, NULL);
+    overrides = eo_setting(L"Global", L"Enabled") && eo_setting(L"Files", L"EnableMediaOverrides");
+    if (!overrides)
+        ds_note("files: Extra Options' media overrides are off (FH2_ExtraOptions.ini: [Global] Enabled=1 and [Files] "
+                "EnableMediaOverrides=1 needed) -- the game shows its own menus and icons");
     g_iconsOn = S.icons == 1 || (S.icons == 2 && ds_present());
     if (g_iconsOn && !pack_open()) {
         ds_note("icons: no PlayStation pictures in this build (and no DualSense\\DualSense.icons) -- the game's own icons");
         g_iconsOn = 0;
     }
-    /* the key: this build, the icons, and the game's files the copies are made from */
+    /* the key: this build, the icons, and the game's files they are made from */
     {
         WCHAR self[MAX_PATH];
         char me[64] = "?";
@@ -703,13 +729,8 @@ static BOOL CALLBACK files_build(PINIT_ONCE once, PVOID param, PVOID *ctx)
         _snprintf(key, sizeof key, "DualSense %s, this DLL %s; icons %d %s %lu\r\n", DS_VERSION, me, g_iconsOn,
                   g_packOwn ? "own" : "built-in", g_iconsOn ? g_packLen : 0);
     }
-    for (int a = -1; a < NARCH; a++) {
-        if (a >= ARCH_ICONS && !g_iconsOn)
-            break;
-        if (a < 0)
-            lstrcpyA(rel, "zipmanifest.xml");
-        else
-            arch_rel(a, rel, sizeof rel);
+    for (int a = 0; a < NARCH && (a < ARCH_ICONS || g_iconsOn); a++) {
+        arch_rel(a, rel, sizeof rel);
         MultiByteToWideChar(CP_UTF8, 0, rel, -1, wrel, 160);
         lstrcpyW(path, g_media);
         lstrcatW(path, wrel);
@@ -718,173 +739,34 @@ static BOOL CALLBACK files_build(PINIT_ONCE once, PVOID param, PVOID *ctx)
         _snprintf(key + kl, sizeof key - kl, "%s %s\r\n", rel, st);
     }
     key[sizeof key - 1] = 0;
-    lstrcpyW(keyPath, g_cache);
-    lstrcatW(keyPath, L"key.txt");
     {
         char *old = (char *)load_file(keyPath, &klen);
-        have = old && klen == strlen(key) && !memcmp(old, key, klen);
+        have = old && klen == strlen(key) && !memcmp(old, key, klen) && g_ovOld.n;
         if (old)
             HeapFree(GetProcessHeap(), 0, old);
     }
-    ZeroMemory(made, sizeof made);
-    if (!have) {
+    for (int i = 0; have && i < g_ovOld.n; i++)
+        have = ov_intact(&g_ovOld.f[i]);
+    if (have) { /* the files of before, there as they were */
+        for (int i = 0; i < g_ovOld.n; i++)
+            ov_add(&g_ovNew, g_ovOld.f[i].rel, g_ovOld.f[i].size, g_ovOld.f[i].crc);
+        dropped = 0;
+    } else {
         DeleteFileW(keyPath);
         for (int a = 0; a < NARCH; a++)
             if (a < ARCH_ICONS || g_iconsOn)
-                any |= made[a] = arch_make(a, dirs[a]);
-        if (!any || !manifest_make(dirs, made)) {
-            ds_note("files: the game's files could not be made (see above) -- the game's own menus and icons");
-            return TRUE;
-        }
+                arch_give(a);
+        dropped = ov_drop_old();
+        ov_save(&g_ovNew);
         save_file(keyPath, key, (DWORD)strlen(key));
     }
-    /* the copies there (made now or before) are given to the game */
-    for (int a = 0; a < NARCH; a++) {
-        WCHAR name[64];
-        if (a >= ARCH_ICONS && !g_iconsOn)
-            continue;
-        arch_rel(a, rel, sizeof rel);
-        MultiByteToWideChar(CP_UTF8, 0, strrchr(rel, '\\') ? strrchr(rel, '\\') + 1 : rel, -1, name, 64);
-        if (!have && !made[a])
-            continue;
-        serve(rel, name);
-    }
-    serve("zipmanifest.xml", L"zipmanifest.xml");
-    g_menuOn = g_textsOk = 0;
-    for (int i = 0; i < g_nserved; i++) {
-        if (!lstrcmpiW(g_served[i].suffix, L"media\\UI.zip"))
-            g_menuOn = 1;
-        if (!wcsncmp(g_served[i].suffix, L"media\\stripped\\", 15))
-            g_textsOk++;
-    }
-    g_textsOk = g_textsOk == LOC_ZIPS;
-    ds_note("files: %s in %.2f s: the DualSense's settings in the game's controller settings %s%s; PlayStation icons %s",
-            have ? "the copies made before, checked" : "made", fh2_now() - t0, g_menuOn ? "on" : "OFF",
-            g_menuOn && !g_textsOk ? " (some languages without its texts)" : "", g_iconsOn ? "on" : "off");
-    return TRUE;
-}
-
-/* ---- giving them to the game: Azimuth's file functions ---- */
-typedef HANDLE(WINAPI *CreateFileWFn)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
-typedef DWORD(WINAPI *GetFileAttributesWFn)(LPCWSTR);
-typedef BOOL(WINAPI *GetFileAttributesExWFn)(LPCWSTR, GET_FILEEX_INFO_LEVELS, LPVOID);
-typedef HANDLE(WINAPI *FindFirstFileExWFn)(LPCWSTR, FINDEX_INFO_LEVELS, LPVOID, FINDEX_SEARCH_OPS, LPVOID, DWORD);
-static CreateFileWFn g_CreateFileW;
-static GetFileAttributesWFn g_GetFileAttributesW;
-static GetFileAttributesExWFn g_GetFileAttributesExW;
-static FindFirstFileExWFn g_FindFirstFileExW;
-static INIT_ONCE g_filesOnce = INIT_ONCE_STATIC_INIT;
-
-/* path ends with "\<suffix>" (any case, / or \) */
-static int ends_with(const WCHAR *path, const WCHAR *suffix)
-{
-    int n = lstrlenW(path), k = lstrlenW(suffix), j;
-    if (n <= k || (path[n - k - 1] != '\\' && path[n - k - 1] != '/'))
-        return 0;
-    for (j = 0; j < k; j++) {
-        WCHAR a = path[n - k + j], b = suffix[j];
-        if (a == '/')
-            a = '\\';
-        if (a >= 'A' && a <= 'Z')
-            a += 32;
-        if (b >= 'A' && b <= 'Z')
-            b += 32;
-        if (a != b)
-            return 0;
-    }
-    return 1;
-}
-
-static Served *served_match(const WCHAR *path)
-{
-    if (!path || !g_nserved)
-        return NULL;
-    for (int i = 0; i < g_nserved; i++) {
-        Served *s = &g_served[i];
-        if (s->state < 0 || !ends_with(path, s->suffix))
-            continue;
-        if (!s->state) {
-            WIN32_FILE_ATTRIBUTE_DATA a;
-            int ok = g_GetFileAttributesExW(path, GetFileExInfoStandard, &a) && !a.nFileSizeHigh && a.nFileSizeLow == s->size;
-            AcquireSRWLockExclusive(&g_servedLock);
-            if (!s->state) {
-                s->state = ok ? 1 : -1;
-                if (!ok)
-                    fh2_say_w("files: the game's file is not the one the copy was made from -- the game's own: ", s->suffix);
-            }
-            ReleaseSRWLockExclusive(&g_servedLock);
-        }
-        if (s->state > 0)
-            return s;
-    }
-    return NULL;
-}
-
-static void note_language(const WCHAR *path);
-
-static HANDLE WINAPI hk_CreateFileW(LPCWSTR name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disp,
-                                    DWORD flags, HANDLE tmpl)
-{
-    Served *s;
-    InitOnceExecuteOnce(&g_filesOnce, files_build, NULL, NULL);
-    if (name)
-        note_language(name);
-    s = disp == OPEN_EXISTING && !(access & (GENERIC_WRITE | GENERIC_ALL)) ? served_match(name) : NULL;
-    if (!s)
-        return g_CreateFileW(name, access, share, sa, disp, flags, tmpl);
-    fh2_say_w("files: the game gets the mod's ", s->suffix);
-    return g_CreateFileW(s->file, access, share | FILE_SHARE_READ, sa, disp, flags, tmpl);
-}
-
-static DWORD WINAPI hk_GetFileAttributesW(LPCWSTR name)
-{
-    InitOnceExecuteOnce(&g_filesOnce, files_build, NULL, NULL);
-    Served *s = served_match(name);
-    return g_GetFileAttributesW(s ? s->file : name);
-}
-
-static BOOL WINAPI hk_GetFileAttributesExW(LPCWSTR name, GET_FILEEX_INFO_LEVELS level, LPVOID info)
-{
-    InitOnceExecuteOnce(&g_filesOnce, files_build, NULL, NULL);
-    Served *s = served_match(name);
-    return g_GetFileAttributesExW(s ? s->file : name, level, info);
-}
-
-static HANDLE WINAPI hk_FindFirstFileExW(LPCWSTR name, FINDEX_INFO_LEVELS level, LPVOID data, FINDEX_SEARCH_OPS op,
-                                         LPVOID filter, DWORD flags)
-{
-    InitOnceExecuteOnce(&g_filesOnce, files_build, NULL, NULL);
-    Served *s = served_match(name);
-    return g_FindFirstFileExW(s ? s->file : name, level, data, op, filter, flags);
-}
-
-/* from the start: Azimuth's imports of the four go through ours */
-static void files_install(void)
-{
-    HMODULE az = GetModuleHandleW(NULL);
-    void *a, *b, *c, *d;
-    g_GetFileAttributesExW = GetFileAttributesExW; /* served_match's, until the hook gives the one below ours */
-    a = iat_hook(az, "KERNEL32.dll", "CreateFileW", (void *)hk_CreateFileW);
-    if (a)
-        g_CreateFileW = (CreateFileWFn)a;
-    b = iat_hook(az, "KERNEL32.dll", "GetFileAttributesW", (void *)hk_GetFileAttributesW);
-    if (b)
-        g_GetFileAttributesW = (GetFileAttributesWFn)b;
-    c = iat_hook(az, "KERNEL32.dll", "GetFileAttributesExW", (void *)hk_GetFileAttributesExW);
-    if (c)
-        g_GetFileAttributesExW = (GetFileAttributesExWFn)c;
-    d = iat_hook(az, "KERNEL32.dll", "FindFirstFileExW", (void *)hk_FindFirstFileExW);
-    if (d)
-        g_FindFirstFileExW = (FindFirstFileExWFn)d;
-    if (!g_CreateFileW)
-        g_CreateFileW = CreateFileW;
-    if (!g_GetFileAttributesW)
-        g_GetFileAttributesW = GetFileAttributesW;
-    if (!g_FindFirstFileExW)
-        g_FindFirstFileExW = FindFirstFileExW;
-    if (!a)
-        ds_note("files: azimuth.exe does not import CreateFileW -- the game's own menus and icons");
-    else
-        fh2_say("files: Azimuth's file functions go through the mod (%s%s%s)", b ? "attributes " : "", c ? "attributes-ex " : "",
-                d ? "find" : "");
+    if (dropped)
+        fh2_say("files: %d of the mod's files of before taken out of mediaoverride", dropped);
+    g_menuOn = overrides && ov_count(&g_ovNew, "UI\\Scenes\\");
+    g_textsOk = ov_count(&g_ovNew, "stripped\\stringtables\\") == LOC_ZIPS;
+    ds_note("files: %s in %.2f s, %d in mediaoverride: the DualSense's settings in the game's controller settings %s%s; "
+            "PlayStation icons %s",
+            have ? "the files of before, checked" : "made", fh2_now() - t0, g_ovNew.n, g_menuOn ? "on" : "OFF",
+            g_menuOn && !g_textsOk ? " (some languages without its texts)" : "",
+            !overrides || !g_iconsOn ? "off" : ov_count(&g_ovNew, "ui\\textures\\") ? "on" : "OFF (see above)");
 }

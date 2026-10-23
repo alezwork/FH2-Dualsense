@@ -6,7 +6,8 @@
    vibrates, ABS as the brakes show it) where the game draws the controller's layout for its own rows. Three switches
    at the end run the tests of the vibration, the triggers and the lights. A change is used at once and kept in
    DualSense.ini.
-   How (FH2 1.0.0.64): the page is XAML (UI.zip: Scenes/Anthem/A_ControllerOptions.xaml, changed by menu_xaml), bound
+   How (FH2 1.0.0.64): the page is XAML (UI.zip: Scenes/Anthem/A_ControllerOptions.xaml, changed by menu_xaml and
+   given to the game through Extra Options' mediaoverride, files.h), bound
    to the C++ page ControllerOptions by property names. A view-model type lists its properties once, the first time
    it is used: the page's type does it in the function that adds its eight descriptors (found by the code around
    the name "InvertCameraLookBack"); that function is hooked, and ours adds the DualSense's after them: DS_<row>
@@ -25,7 +26,7 @@ static const char *const kLocZip[] = {"EN", "GB", "DE", "FR", "IT", "ES", "MX", 
 static const BYTE kLocLang[] = {L_EN, L_EN, L_DE, L_FR, L_IT, L_ES, L_ES, L_PT, L_PL,
                                 L_NL, L_RU, L_JA, L_KO, L_ZH, L_EN, L_EN, L_EN, L_EN};
 #define LOC_ZIPS 18
-static volatile LONG g_lang = -1; /* the game's language: the string table it opened (L_*) */
+static volatile LONG g_lang = -1; /* the game's language, for the state's text (menu_language: L_*) */
 static int g_menuOn;              /* the controller settings page has the DualSense's section (files.h) */
 
 enum { R_SWITCH, R_SLIDER };
@@ -438,26 +439,25 @@ static const char *const *menu_texts(int lang)
     return g_menuTexts[lang];
 }
 
-/* the game's language: the string table it opens (media\stripped\stringtables\<lang>.zip) */
-static void note_language(const WCHAR *path)
+/* the game's language, as Azimuth gives it to the game: its launcher's language (data\azimuth.ini [launcher]
+   language=, "ru-RU"), else Windows' (the rows' own texts come from the game's string table in any case) */
+static void menu_language(void)
 {
-    const WCHAR *t = path;
-    int n;
-    for (const WCHAR *p = path; *p; p++)
-        if ((*p == '\\' || *p == '/') && CompareStringOrdinal(p + 1, 13, L"stringtables\\", 13, TRUE) == CSTR_EQUAL)
-            t = p + 14;
-    if (t == path)
-        return;
-    for (int i = 0; i < LOC_ZIPS; i++) {
-        n = lstrlenA(kLocZip[i]);
-        WCHAR w[8];
-        MultiByteToWideChar(CP_UTF8, 0, kLocZip[i], -1, w, 8);
-        if (CompareStringOrdinal(t, n, w, n, TRUE) == CSTR_EQUAL && !lstrcmpiW(t + n, L".zip")) {
-            if (InterlockedExchange(&g_lang, kLocLang[i]) != kLocLang[i])
-                fh2_say("menu: the game's language: %s", kLocZip[i]);
-            return;
-        }
+    static const char kCode[L_COUNT][3] = {"en", "de", "fr", "it", "es", "pt", "pl", "nl", "ru", "ja", "ko", "zh"};
+    WCHAR az[MAX_PATH], v[LOCALE_NAME_MAX_LENGTH] = L"";
+    int lang = L_EN;
+    if (lstrlenW(g_azDir) + 24 < MAX_PATH) {
+        lstrcpyW(az, g_azDir);
+        lstrcatW(az, L"data\\azimuth.ini");
+        GetPrivateProfileStringW(L"launcher", L"language", L"", v, LOCALE_NAME_MAX_LENGTH, az);
     }
+    if (!v[0] && !LCIDToLocaleName(MAKELCID(GetUserDefaultUILanguage(), SORT_DEFAULT), v, LOCALE_NAME_MAX_LENGTH, 0))
+        v[0] = 0;
+    for (int i = 0; i < L_COUNT && v[0] && v[1]; i++)
+        if ((v[0] | 32) == kCode[i][0] && (v[1] | 32) == kCode[i][1])
+            lang = i;
+    g_lang = lang;
+    fh2_say_w("menu: the game's language (for the controller's state): ", v[0] ? v : L"?");
 }
 
 /* ================================================================================================================ */
@@ -776,7 +776,7 @@ static void menu_slide(int row, float v)
 /* the controller's state, in the game's language */
 static void menu_status(WCHAR *out, int n)
 {
-    int lang = g_lang >= 0 ? (int)g_lang : (S.menuRu ? L_RU : L_EN), on = g_connected && g_ds.h;
+    int lang = g_lang >= 0 ? (int)g_lang : L_EN, on = g_connected && g_ds.h;
     const char *const *w = kWords[lang];
     char t[1024], *q = t;
     double now = fh2_now();
@@ -1004,7 +1004,7 @@ static int menu_install(BYTE *base)
     Image g;
     BYTE *str = NULL, *L = NULL, *descFn, *C = NULL, *classInit;
     if (!g_menuOn) {
-        fh2_say("menu: the page is the game's own this time (files.h) -- no properties");
+        fh2_say("menu: the page is the game's own this time (files.h: not in mediaoverride) -- no properties");
         return 0;
     }
     for (int i = 0; i < MENU_ROWS; i++) {
