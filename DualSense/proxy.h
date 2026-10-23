@@ -1,10 +1,10 @@
-/* proxy.h -- how the mod gets into Azimuth on its own: it is d3d12.dll in Azimuth's folder (next to azimuth.exe).
+/* proxy.h -- how the mod gets into Azimuth: it is d3d12.dll in Azimuth's folder (next to azimuth.exe).
    azimuth.exe imports Direct3D 12 by that name, and Windows looks for such a DLL in the program's folder first, so
    this one loads with the emulator, before its first line runs. Every Direct3D 12 function goes on to the real
    d3d12.dll of System32 (loaded here; its 18 names and its one ordinal-only export, with the same ordinals:
-   d3d12.def), each through a jump of a few bytes. Nothing of Azimuth is changed on disk, no other mod is needed, and
-   the mods that load the same way under other names (Extra Options: winmm.dll, the FH2 Mod Platform:
-   d3dcompiler_47.dll) load as before, beside it. */
+   d3d12.def), each through a jump of a few bytes. Extra Options loads the same way as winmm.dll, beside it (it loads
+   no other DLLs itself), and Azimuth's azimuth-tls.dll is not touched (Azimuth checks its hash): nothing of Azimuth
+   is changed on disk. */
 #pragma once
 
 /* the real functions, in d3d12.def's order; [18]: ordinal 99 */

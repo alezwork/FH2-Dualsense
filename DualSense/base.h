@@ -1,5 +1,6 @@
 /* base.h -- what the mod's parts share: its folder next to azimuth.exe (DualSense\: DualSense.ini, DualSense.log,
-   the game's files it has made, an icon pack of your own), the log, the ini, the clock, the game's image. */
+   mediaoverride.txt -- the list of the game's files it has written --, an icon pack of your own), the log, the ini,
+   the clock, the game's image. */
 #pragma once
 #include <windows.h>
 #include <xinput.h>
@@ -7,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define DS_VERSION "2.2.0"
+#define DS_VERSION "3.0.0"
 
 extern IMAGE_DOS_HEADER __ImageBase; /* this DLL */
 static WCHAR g_azDir[MAX_PATH]; /* azimuth.exe's folder, with its \ */

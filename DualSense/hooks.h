@@ -1,10 +1,11 @@
-/* hooks.h -- the game in memory, and the mod's hooks into it and into Azimuth.
+/* hooks.h -- Extra Options, the game in memory, and the mod's hooks into it.
+   The mod works on top of Forza Horizon 2 Extra Options (winmm.dll next to azimuth.exe) and not without it: Extra
+   Options gives the game the mod's files (its media overrides, files.h), and it patches the game before anyone else.
    Azimuth maps the game's exe (forza_durango_release_final.exe, 24 November 2015) into its own process when Play is
-   pressed, at the exe's preferred base, and marks its code executable a moment later. Extra Options (winmm.dll), when
-   it is there, patches the game right then, but only if every place it patches is as on disk; so the mod waits for it
-   to say it is done (its log, FH2_ExtraOptions.log, written at that moment) before hooking any game code -- the mod
-   neither needs nor uses it, it only keeps out of its way. Hooks into game code are MinHook's (third_party\minhook,
-   BSD 2-clause); the file functions of Azimuth itself are hooked in its import table, from the start. */
+   pressed, at the exe's preferred base, then loads its azimuth-tls.dll (its own, as it is: Azimuth checks its hash);
+   right then Extra Options patches the game, but only if every place it patches is as on disk. Its export
+   Fh2TweaksStatus() tells how far it is, so the mod hooks no game code before it says "OK". Hooks into game code are
+   MinHook's (third_party\minhook, BSD 2-clause); nothing of Azimuth itself is hooked. */
 #pragma once
 #include "../third_party/minhook/include/MinHook.h"
 
@@ -56,42 +57,57 @@ static BYTE *find_game(void)
     return NULL;
 }
 
-/* Extra Options: 1 when it is not there or has said it is done this launch (its log rewritten since the process
-   started, with its status on the second line), else 0 */
-static int extra_options_done(char *why, int whyLen)
+/* ---- Extra Options ----
+   Fh2TweaksStatus() (0.2.98) returns its state, a text it rewrites as it goes: "Not initialized", "Waiting for
+   Azimuth to load its original TLS helper." until the game is there; then "OK: requested tweaks applied in memory."
+   (or "OK: all requested tweaks already match...") once its patches are in, else "REFUSED: ...", "DISABLED: ..." or
+   "INACTIVE: ..." when it made none. */
+typedef const char *(*EoStatusFn)(void);
+static EoStatusFn g_eoStatus;
+static WCHAR g_eoIni[MAX_PATH]; /* its FH2_ExtraOptions.ini */
+
+/* Extra Options among the process's DLLs (the winmm.dll that has its export); 1 when it is there */
+static int eo_find(void)
 {
-    WCHAR path[MAX_PATH], sys[MAX_PATH];
     HMODULE w = GetModuleHandleW(L"winmm.dll");
-    FILETIME created, x, k, u, written;
-    char text[4096];
-    DWORD got = 0, n;
-    HANDLE f;
-    if (!w || !(n = GetModuleFileNameW(w, path, MAX_PATH)) || n >= MAX_PATH)
-        return lstrcpynA(why, "no Extra Options", whyLen), 1;
-    GetSystemDirectoryW(sys, MAX_PATH);
-    while (n && path[n - 1] != '\\')
-        n--;
-    path[n ? n - 1 : 0] = 0;
-    if (!lstrcmpiW(path, sys))
-        return lstrcpynA(why, "no Extra Options", whyLen), 1;
-    lstrcatW(path, L"\\FH2_ExtraOptions.log");
-    f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
-    if (f == INVALID_HANDLE_VALUE)
+    DWORD n;
+    if (!w || !(g_eoStatus = (EoStatusFn)(void *)GetProcAddress(w, "Fh2TweaksStatus")))
         return 0;
-    GetProcessTimes(GetCurrentProcess(), &created, &x, &k, &u);
-    text[0] = 0;
-    if (GetFileTime(f, NULL, NULL, &written) && CompareFileTime(&written, &created) >= 0 &&
-        ReadFile(f, text, sizeof text - 1, &got, NULL))
-        text[got] = 0;
-    CloseHandle(f);
-    if (strstr(text, "\nAZIMUTH: winmm proxy initialized"))
-        return lstrcpynA(why, "Extra Options has made its patches", whyLen), 1;
-    char *nl = strchr(text, '\n');
-    if (nl && (!strncmp(nl + 1, "OK:", 3)))
-        return lstrcpynA(why, "Extra Options has made its patches", whyLen), 1;
-    if (nl && (!strncmp(nl + 1, "REFUSED:", 8) || !strncmp(nl + 1, "DISABLED:", 9)))
-        return lstrcpynA(why, "Extra Options made no patches", whyLen), 1;
+    n = GetModuleFileNameW(w, g_eoIni, MAX_PATH);
+    while (n && g_eoIni[n - 1] != '\\' && g_eoIni[n - 1] != '/')
+        n--;
+    g_eoIni[n] = 0;
+    if (n && n + 24 < MAX_PATH)
+        lstrcatW(g_eoIni, L"FH2_ExtraOptions.ini");
+    else
+        g_eoIni[0] = 0;
+    return 1;
+}
+
+/* its state now (a copy: it may be rewritten while read) */
+static void eo_state(char *out, int n)
+{
+    const char *s = g_eoStatus ? g_eoStatus() : NULL;
+    int i = 0;
+    for (; s && i < n - 1 && s[i] && s[i] != '\r' && s[i] != '\n'; i++)
+        out[i] = s[i];
+    out[i] = 0;
+}
+
+/* 1: its patches are in; -1: it made none (it refused, is switched off, or this is not FH2); 0: not yet */
+static int eo_done(const char *state)
+{
+    if (!strncmp(state, "OK:", 3))
+        return 1;
+    if (!strncmp(state, "REFUSED:", 8) || !strncmp(state, "DISABLED:", 9) || !strncmp(state, "INACTIVE:", 9))
+        return -1;
     return 0;
+}
+
+/* one of its ini's switches (1 when its ini is not found: its own default) */
+static int eo_setting(const WCHAR *sec, const WCHAR *key)
+{
+    return g_eoIni[0] ? (int)GetPrivateProfileIntW(sec, key, 1, g_eoIni) : 1;
 }
 
 /* every section of the game that is code on disk is executable here */
@@ -110,25 +126,36 @@ static int game_code_executable(void)
     return 1;
 }
 
-/* the game mapped, Extra Options done (or not there), its code executable: the game's base */
+/* Extra Options' patches in, the game mapped, its code executable: the game's base; NULL when Extra Options made no
+   patches (then the mod leaves the game alone) */
 static BYTE *wait_for_game(void)
 {
-    char why[96] = "";
+    char state[160];
     ULONGLONG seen;
-    while (!find_game())
-        Sleep(50);
-    seen = GetTickCount64();
-    while (!extra_options_done(why, sizeof why)) {
-        if (GetTickCount64() - seen > 20000) {
-            lstrcpyA(why, "Extra Options did not say it was done within 20 s -- going ahead");
+    int done;
+    for (;;) {
+        eo_state(state, sizeof state);
+        if ((done = eo_done(state)) != 0)
             break;
-        }
         Sleep(50);
+    }
+    if (done < 0) {
+        ds_note("Extra Options made no patches (\"%s\") -- the mod does not touch the game: no car data, menu haptics "
+                "or settings page this time", state);
+        return NULL;
+    }
+    Sleep(250); /* after its "OK" it only puts the pages' protection back */
+    seen = GetTickCount64();
+    while (!find_game() && GetTickCount64() - seen < 10000)
+        Sleep(50);
+    if (!g_game) {
+        ds_note("Extra Options is done, but the game is not where it should be -- the mod does not touch the game");
+        return NULL;
     }
     seen = GetTickCount64();
     while (!game_code_executable() && GetTickCount64() - seen < 10000)
         Sleep(10);
-    fh2_say("the game is at game+0 = %p; its code is ready (%s)", (void *)g_game, why);
+    fh2_say("the game is at game+0 = %p; its code is ready (Extra Options: \"%s\")", (void *)g_game, state);
     return g_game;
 }
 
@@ -156,37 +183,6 @@ static int mh_hook(const char *name, void *target, void *detour, void **original
         return 0;
     }
     return 1;
-}
-
-/* an import of a module (Azimuth's own) pointed at ours: the function it called before (another mod's hook, or the
-   system's), NULL when the module does not import it */
-static void *iat_hook(HMODULE mod, const char *dll, const char *func, void *detour)
-{
-    BYTE *b = (BYTE *)mod;
-    IMAGE_NT_HEADERS64 *nt = (IMAGE_NT_HEADERS64 *)(b + ((IMAGE_DOS_HEADER *)b)->e_lfanew);
-    IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-    if (!dir.VirtualAddress)
-        return NULL;
-    for (IMAGE_IMPORT_DESCRIPTOR *d = (IMAGE_IMPORT_DESCRIPTOR *)(b + dir.VirtualAddress); d->Name; d++) {
-        if (lstrcmpiA((const char *)(b + d->Name), dll))
-            continue;
-        IMAGE_THUNK_DATA64 *names = (IMAGE_THUNK_DATA64 *)(b + (d->OriginalFirstThunk ? d->OriginalFirstThunk : d->FirstThunk));
-        IMAGE_THUNK_DATA64 *slots = (IMAGE_THUNK_DATA64 *)(b + d->FirstThunk);
-        for (; names->u1.AddressOfData; names++, slots++) {
-            DWORD old;
-            void *prev;
-            if (IMAGE_SNAP_BY_ORDINAL64(names->u1.Ordinal) ||
-                strcmp((const char *)((IMAGE_IMPORT_BY_NAME *)(b + names->u1.AddressOfData))->Name, func))
-                continue;
-            if (!VirtualProtect(&slots->u1.Function, 8, PAGE_READWRITE, &old))
-                return NULL;
-            prev = (void *)(ULONG_PTR)slots->u1.Function;
-            slots->u1.Function = (ULONGLONG)(ULONG_PTR)detour;
-            VirtualProtect(&slots->u1.Function, 8, old, &old);
-            return prev;
-        }
-    }
-    return NULL;
 }
 
 /* executable memory within 2 GB of `around` (for a 5-byte jump from there) */

@@ -1,10 +1,12 @@
-/* d3d12.dll -- the PlayStation 5 controller (DualSense, DualSense Edge; USB or Bluetooth, no other software or mod
-   needed) for Forza Horizon 2 on Azimuth 0.9.10. It sits next to azimuth.exe as d3d12.dll and passes Direct3D 12 on to
-   the system's (proxy.h); the rest is the mod's own.
+/* d3d12.dll -- the PlayStation 5 controller (DualSense, DualSense Edge; USB or Bluetooth, no other software needed)
+   for Forza Horizon 2 on Azimuth 0.9.10, on top of Forza Horizon 2 Extra Options (winmm.dll, 0.2.98) and not without
+   it. One plain DLL next to azimuth.exe: Windows loads it as Azimuth's d3d12.dll, and it passes Direct3D 12 on to the
+   system's (proxy.h). Azimuth's own files (azimuth-tls.dll among them) stay as they are; Extra Options gives the game
+   the mod's files and patches the game first, and the mod hooks the game only once it is done (hooks.h).
 
    What the game gets: the DualSense as one of the PC's gamepads (wgi.h: the engine gives the game the PC's
    Windows.Gaming.Input gamepads, and ours is one of them), with the PlayStation button icons, and the DualSense's
-   settings in its own controller settings, in its language (files.h, menu.h).
+   settings in its own controller settings, in its language (files.h: through Extra Options' mediaoverride; menu.h).
    What the controller gets from the game:
    - rumble: the game's two motors (engine revs, collisions, tyres: media\ControllerRumble.xml) -- as the DualSense's
      rumble emulation (USB/Bluetooth), or, on USB, as HD haptics: our own waveforms on the controller's two haptic
@@ -80,7 +82,6 @@ static struct {
     float surface;    /* the road in the vibration and the triggers: 0..1 */
     int comboLights;  /* the skill combo on the player lights */
     int trigOn;       /* "Adaptive triggers" ([Triggers] Enabled) */
-    int menuRu;       /* Russian, before the game has said its language (the state's text) */
 } S;
 
 static WORD button_of(const WCHAR *s)
@@ -185,16 +186,6 @@ static void load_settings(void)
         S.gyroMaxAngle = 5;
     S.gyroInvert = fh2_ini_int(L"Gyro", L"Invert", 0);
     S.trigOn = fh2_ini_int(L"Triggers", L"Enabled", 1) != 0;
-    {
-        /* the language until the game opens its string table: Azimuth's, else Windows' */
-        WCHAR az[MAX_PATH], v[32] = L"";
-        if (lstrlenW(g_azDir) + 24 < MAX_PATH) {
-            lstrcpyW(az, g_azDir);
-            lstrcatW(az, L"data\\azimuth.ini");
-            GetPrivateProfileStringW(L"launcher", L"language", L"", v, 32, az);
-        }
-        S.menuRu = v[0] ? (v[0] | 32) == 'r' && (v[1] | 32) == 'u' : PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN;
-    }
 }
 
 /* ---------------------------------------------------------------------------------------------------------------- */
@@ -1431,8 +1422,8 @@ static DWORD WINAPI controller_thread(void *arg)
 /* ---------------------------------------------------------------------------------------------------------------- */
 /* the start                                                                                                        */
 
-/* the mod's own thread, once the game is there: the car's data, the wheels' surfaces, the interface sounds, the
-   settings page's properties */
+/* the mod's own thread, once the game is there and Extra Options has patched it: the car's data, the wheels'
+   surfaces, the interface sounds, the settings page's properties */
 static DWORD WINAPI game_thread(void *arg)
 {
     BYTE *base;
@@ -1447,15 +1438,24 @@ static DWORD WINAPI game_thread(void *arg)
     return 0;
 }
 
-/* the mod's start, on its own thread as Azimuth starts (from DllMain, proxy.h): the settings, the files the game will
-   get, the controller, then the game */
+/* the mod's start, on its own thread as Azimuth starts (from DllMain, after Windows has loaded Azimuth's DLLs, Extra
+   Options' winmm.dll among them): Extra Options, the settings, the files the game will get, the controller, then the
+   game */
 static DWORD WINAPI mod_start(void *arg)
 {
     HANDLE h;
+    char state[160];
     (void)arg;
     ds_files_open(kDefaultIni);
     if (g_d3d12Why[0])
         ds_note("d3d12: %s", g_d3d12Why);
+    if (!eo_find()) {
+        ds_note("no Forza Horizon 2 Extra Options (its winmm.dll next to azimuth.exe, 0.2.98 for Azimuth 0.9.10): the "
+                "mod works on top of it and not without it -- off; Direct3D 12 goes on as always");
+        return 0;
+    }
+    eo_state(state, sizeof state);
+    fh2_say("Extra Options: \"%s\"", state);
     load_settings();
     for (DWORD i = 0; i < 256; i++) {
         DWORD c = i;
@@ -1463,15 +1463,16 @@ static DWORD WINAPI mod_start(void *arg)
             c = c & 1 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
         g_crcTable[i] = c;
     }
-    files_install();
-    InitOnceExecuteOnce(&g_filesOnce, files_build, NULL, NULL); /* now, before Play is pressed */
+    menu_language();
+    files_build(S.enabled); /* now, before Play is pressed */
+    if (!S.enabled) {
+        ds_note("off ([DualSense] Enabled=0): no controller, no hooks, none of its files for the game");
+        return 0;
+    }
     wgi_find_engine((BYTE *)GetModuleHandleW(NULL)); /* azimuth.exe */
-    if (S.enabled) {
-        h = CreateThread(NULL, 0, controller_thread, NULL, 0, NULL);
-        if (h)
-            CloseHandle(h);
-    } else
-        ds_note("the controller switched off ([DualSense] Enabled=0)");
+    h = CreateThread(NULL, 0, controller_thread, NULL, 0, NULL);
+    if (h)
+        CloseHandle(h);
     h = CreateThread(NULL, 0, game_thread, NULL, 0, NULL);
     if (h)
         CloseHandle(h);
