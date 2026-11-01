@@ -184,7 +184,7 @@ static int wgi_find_engine(BYTE *engine)
     if (!image_of(engine, &m))
         return 0;
     for (BYTE *p = m.rdata + 2; p + sizeof kClass <= m.rdataEnd && !str; p += 2)
-        if (*(const WCHAR *)p == 'W' && !*(const WCHAR *)(p - 2) && !memcmp(p, kClass, sizeof kClass))
+        if (*(const WCHAR *)p == 'W' && !memcmp(p, kClass, sizeof kClass))
             str = p;
     for (BYTE *p = m.text; str && p + 7 <= m.textEnd && !lea; p++)
         if (p[0] == 0x48 && p[1] == 0x8D && p[2] == 0x0D && rel32(p, 3, 7) == str)
