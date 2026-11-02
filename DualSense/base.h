@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define DS_VERSION "4.1.0"
+#define DS_VERSION "4.2.0"
 
 extern IMAGE_DOS_HEADER __ImageBase; /* this DLL */
 static WCHAR g_azDir[MAX_PATH]; /* azimuth.exe's folder, with its \ */

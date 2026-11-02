@@ -23,11 +23,14 @@ DS4Windows. Formerly FH2-DualSense.
   | Look around (right stick) | J L I K | LB / RB | Left Shift / C |
   | D-pad | arrow keys | Menu / View | Esc / Tab |
   | Stick clicks (L3 / R3) | F / V | | |
-- **Mouse**: looks around (the right stick, on top of the keys). The view goes where you move the mouse, like the
-  game's look on the stick, and comes back to the front when the mouse is still; or the stick follows the mouse's
-  speed, as a free camera (`[Mouse] Look=Speed`). Sensitivity, the way back, inverted Y in `[Mouse]`. Raw input, so it
-  keeps going at the screen's edge; the cursor stays in the game's window while it is in front. The mouse buttons can
-  be bound like keys (`Mouse1`..`Mouse5` in `[Keys]`).
+- **Mouse**: driving, it looks around (the right stick, on top of the keys). The view goes where you move the mouse,
+  like the game's look on the stick, and comes back to the front when the mouse is still; or the stick follows the
+  mouse's speed, as a free camera (`[Mouse] Look=Speed`). In the menus (whenever the car is not being driven) it moves
+  the left stick -- the map's cursor, the lists -- and the wheel scrolls (D-pad up/down, or LB/RB for the tabs:
+  `[Mouse] Wheel`), the left button is A (confirm) and the right one B (back). Driving, the buttons do only what
+  `[Keys]` gives them (`Mouse1`..`Mouse5`; nothing by default). Raw input, so it keeps going at the screen's edge;
+  the cursor stays in the game's window while it is in front. The game has no pointer of its own: the mouse works
+  through the gamepad's controls.
 - **Button icons that follow the device in use**, as you go: PlayStation symbols for the DualSense, key caps with your
   keys for the keyboard, the game's own for an Xbox controller -- in the prompts, the menus and the controls screen.
   Or always one of them (`[Icons] Mode`).

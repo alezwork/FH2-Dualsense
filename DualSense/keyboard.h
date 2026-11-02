@@ -2,11 +2,11 @@
    DualSense into the one gamepad of the mod's that the game gets (wgi.h). Steering and the pedals move smoothly, like
    a stick and triggers, at the speeds in the ini. Keys count only while the game's window is in front. The gamepad
    joins the game's at the first key press (or when the DualSense connects) and stays. Settings: [Keyboard] and [Keys]
-   in DualSense.ini. Extra Options' own keys (F1-F4 and Tab by default) are not used here. The mouse looks around
-   (mouse.h). */
+   in DualSense.ini. Extra Options' own keys (F1-F4 and Tab by default) are not used here. The mouse looks around,
+   and in the menus moves the left stick and turns its wheel into buttons (mouse.h). */
 #pragma once
 
-static void ms_poll(int in, double now, float dt, float *x, float *y);
+static void ms_poll(int in, double now, float dt, float st[4], WORD *buttons);
 
 enum {
     KB_THROTTLE, KB_BRAKE, KB_LEFT, KB_RIGHT,               /* RT, LT, left stick X */
@@ -197,12 +197,12 @@ static void kb_poll(XINPUT_GAMEPAD *out)
     g_kbBrake = kb_approach(g_kbBrake, in && kb_down(KB_BRAKE) ? 1.0f : 0.0f, g_kbPedalSpeed, dt);
     g_kbLookX = kb_approach(g_kbLookX, in ? (float)(kb_down(KB_LOOK_RIGHT) - kb_down(KB_LOOK_LEFT)) : 0, g_kbLookSpeed, dt);
     g_kbLookY = kb_approach(g_kbLookY, in ? (float)(kb_down(KB_LOOK_UP) - kb_down(KB_LOOK_DOWN)) : 0, g_kbLookSpeed, dt);
-    g.sThumbLX = fh2_axis(g_kbSteer);
-    g.sThumbLY = fh2_axis(in ? (float)(kb_down(KB_STICK_UP) - kb_down(KB_STICK_DOWN)) : 0);
-    float mx, my;
-    ms_poll(in, now, dt, &mx, &my); /* the mouse's look on top of the keys' */
-    g.sThumbRX = fh2_axis(g_kbLookX + mx);
-    g.sThumbRY = fh2_axis(g_kbLookY + my);
+    float ms[4]; /* the mouse's sticks on top of the keys': the look, or the left stick in the menus */
+    ms_poll(in, now, dt, ms, &g.wButtons);
+    g.sThumbLX = fh2_axis(g_kbSteer + ms[0]);
+    g.sThumbLY = fh2_axis((in ? (float)(kb_down(KB_STICK_UP) - kb_down(KB_STICK_DOWN)) : 0) + ms[1]);
+    g.sThumbRX = fh2_axis(g_kbLookX + ms[2]);
+    g.sThumbRY = fh2_axis(g_kbLookY + ms[3]);
     g.bRightTrigger = (BYTE)(g_kbThrottle * 255.0f + 0.5f);
     g.bLeftTrigger = (BYTE)(g_kbBrake * 255.0f + 0.5f);
     if (in)

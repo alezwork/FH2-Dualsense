@@ -226,6 +226,9 @@ static int used(const XINPUT_GAMEPAD *g)
 #include "fx.h"
 #include "car.h"
 
+/* the mouse's menus: the car's feedback is not coming (menus, paused, loading); unknown without the car's hook */
+static int ms_menus(double now) { return Car.hooked && !car_driving(now); }
+
 /* ---------------------------------------------------------------------------------------------------------------- */
 /* the controller                                                                                                   */
 typedef struct {
