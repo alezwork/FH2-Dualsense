@@ -19,3 +19,6 @@ EXPORTS
     GetBehaviorValue @117
     SetAppCompatStringPointer @100
     D3D12Ordinal99 @99 NONAME
+    Fh2IconLook
+    Fh2SwitchIcons
+    Fh2ScanIcons

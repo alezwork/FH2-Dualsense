@@ -1,13 +1,15 @@
-/* wgi.h -- the DualSense as one of the PC's gamepads (Azimuth 0.9.10).
-   The engine gives the game the PC's Windows.Gaming.Input gamepads (azimuth.exe 0.9.10, its pads code): it takes the
+/* wgi.h -- the DualSense and the keyboard as one of the PC's gamepads (Azimuth 0.9.10 and on: 1.0.x the same way).
+   The engine gives the game the PC's Windows.Gaming.Input gamepads (azimuth.exe, its pads code): it takes the
    Gamepad statics (RoGetActivationFactory "Windows.Gaming.Input.Gamepad"), registers its handlers of GamepadAdded and
    GamepadRemoved, keeps the statics, and then reads every pad it was given with GetCurrentReading and sends it the
    game's four vibration levels -- the two motors and the two impulse triggers -- with put_Vibration. Windows lists
    only Xbox-like controllers there, not the DualSense. So the DualSense is a gamepad object of ours (the
    Windows.Gaming.Input IGamepad interface: its reading and its vibration), handed to the engine's own GamepadAdded
    handler once the engine's pads are up and the controller is there, and to its GamepadRemoved handler when the
-   controller goes. The engine treats it as any other gamepad: the game sees it, its player, its rumble.
-   The handlers and the statics are found by the code that registers them, right after the class name. */
+   controller goes (unless the keyboard is in use: then it stays, the keyboard's). The engine treats it as any other
+   gamepad: the game sees it, its player, its rumble. Its reading is the DualSense's and the keyboard's together
+   (keyboard.h). The handlers and the statics are found by the code that registers them, right after the class name
+   (in 1.0.x the name follows other data, not a 0). */
 #pragma once
 
 /* Windows.Gaming.Input */
@@ -136,13 +138,15 @@ static HRESULT STDMETHODCALLTYPE pad_reading(WgiPad *p, WgiReading *r)
                       {XINPUT_GAMEPAD_LEFT_SHOULDER, WGI_LB}, {XINPUT_GAMEPAD_RIGHT_SHOULDER, WGI_RB},
                       {XINPUT_GAMEPAD_A, WGI_A},              {XINPUT_GAMEPAD_B, WGI_B},
                       {XINPUT_GAMEPAD_X, WGI_X},              {XINPUT_GAMEPAD_Y, WGI_Y}};
-    XINPUT_GAMEPAD g;
+    XINPUT_GAMEPAD g, k;
     (void)p;
     if (!r)
         return E_POINTER;
     AcquireSRWLockShared(&g_lock);
     g = g_dsPad;
     ReleaseSRWLockShared(&g_lock);
+    kb_poll(&k);
+    kb_merge(&g, &k);
     ZeroMemory(r, sizeof *r);
     r->timestamp = (UINT64)(fh2_now() * 1e6);
     for (int i = 0; i < 14; i++)
@@ -184,7 +188,7 @@ static int wgi_find_engine(BYTE *engine)
     if (!image_of(engine, &m))
         return 0;
     for (BYTE *p = m.rdata + 2; p + sizeof kClass <= m.rdataEnd && !str; p += 2)
-        if (*(const WCHAR *)p == 'W' && !*(const WCHAR *)(p - 2) && !memcmp(p, kClass, sizeof kClass))
+        if (*(const WCHAR *)p == 'W' && !memcmp(p, kClass, sizeof kClass))
             str = p;
     for (BYTE *p = m.text; str && p + 7 <= m.textEnd && !lea; p++)
         if (p[0] == 0x48 && p[1] == 0x8D && p[2] == 0x0D && rel32(p, 3, 7) == str)
@@ -206,8 +210,8 @@ static int wgi_find_engine(BYTE *engine)
     }
     if (!statics || !in_range((void *)statics, m.data, m.dataEnd) || !wgi_handler_ok(&m, added, 1) ||
         !wgi_handler_ok(&m, removed, 0) || *(void **)added != *(void **)removed) {
-        ds_note("pads: not Azimuth 0.9.10's (class name %s, its code %s, handlers %p %p, statics %p) -- the DualSense "
-                "can't be given to the game", str ? "found" : "NOT found", lea ? "found" : "NOT found", (void *)added,
+        ds_note("pads: Azimuth's gamepad code is not as expected (class name %s, its code %s, handlers %p %p, statics %p) "
+                "-- the DualSense and the keyboard can't be given to the game", str ? "found" : "NOT found", lea ? "found" : "NOT found", (void *)added,
                 (void *)removed, (void *)statics);
         return 0;
     }
@@ -217,7 +221,8 @@ static int wgi_find_engine(BYTE *engine)
     return 1;
 }
 
-/* the controller's thread: ours to the engine once its pads are up and the controller is there; away when it goes */
+/* the controller's thread: ours to the engine once its pads are up and the controller (or the keyboard) is there;
+   away when the controller goes and the keyboard is not in use */
 static void wgi_update(int connected)
 {
     BYTE *h = connected ? g_engAdded : g_engRemoved;
@@ -225,5 +230,7 @@ static void wgi_update(int connected)
         return;
     HRESULT hr = ((WgiInvokeFn)(*(void ***)h)[3])(h, NULL, &g_pad);
     g_padIn = connected;
-    ds_note("pads: the DualSense %s the game's gamepads (0x%08lX)", connected ? "joins" : "leaves", (unsigned long)hr);
+    ds_note("pads: the mod's gamepad (%s) %s the game's gamepads (0x%08lX)",
+            g_connected && g_kbJoined ? "DualSense + keyboard" : g_connected ? "DualSense" : "keyboard",
+            connected ? "joins" : "leaves", (unsigned long)hr);
 }

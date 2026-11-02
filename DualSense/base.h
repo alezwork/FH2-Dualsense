@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define DS_VERSION "3.0.0"
+#define DS_VERSION "4.0.0"
 
 extern IMAGE_DOS_HEADER __ImageBase; /* this DLL */
 static WCHAR g_azDir[MAX_PATH]; /* azimuth.exe's folder, with its \ */
@@ -89,7 +89,7 @@ static void ds_files_open(const char *defaultIni)
     if (g_log == INVALID_HANDLE_VALUE)
         g_log = NULL;
     GetLocalTime(&t);
-    fh2_say("DualSense %s: %04d-%02d-%02d", DS_VERSION, t.wYear, t.wMonth, t.wDay);
+    fh2_say("FH2-DualSense %s (d3d12.dll): %04d-%02d-%02d", DS_VERSION, t.wYear, t.wMonth, t.wDay); /* the installer knows the DLL by this */
     fh2_say_w("Azimuth: ", g_azDir);
     if (GetFileAttributesW(g_ini) == INVALID_FILE_ATTRIBUTES) {
         HANDLE h = CreateFileW(g_ini, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);

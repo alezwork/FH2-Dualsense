@@ -7,7 +7,7 @@
    at the end run the tests of the vibration, the triggers and the lights. A change is used at once and kept in
    DualSense.ini.
    How (FH2 1.0.0.64): the page is XAML (UI.zip: Scenes/Anthem/A_ControllerOptions.xaml, changed by menu_xaml and
-   given to the game through Extra Options' mediaoverride, files.h), bound
+   given to the game from the mod's folder, files.h), bound
    to the C++ page ControllerOptions by property names. A view-model type lists its properties once, the first time
    it is used: the page's type does it in the function that adds its eight descriptors (found by the code around
    the name "InvertCameraLookBack"); that function is hooked, and ours adds the DualSense's after them: DS_<row>
@@ -279,33 +279,35 @@ static const MenuRow kMenu[] = {
       "플레이어 표시등이 스킬 체인을 보여 줍니다. 스킬마다 하나씩 켜지고, 점수가 확정되면 모두 깜박입니다.",
       "玩家指示燈會顯示技巧連鎖：每個技巧多亮一顆；分數入帳時全部閃爍。"}},
     {"Icons", R_SWITCH, 1,
-     {"PlayStation button icons", "PlayStation-Tastensymbole", "Icônes des touches PlayStation",
-      "Icone dei tasti PlayStation", "Iconos de botones PlayStation", "Ícones dos botões PlayStation",
-      "Ikony przycisków PlayStation", "PlayStation-knoppictogrammen", "Иконки кнопок PlayStation",
-      "PlayStationのボタンアイコン", "PlayStation 버튼 아이콘", "PlayStation 按鈕圖示"},
-     {"The game's button icons and the controller drawing with PlayStation symbols, when a DualSense is connected as "
-      "the game starts. Takes effect at the next start.",
-      "Die Tastensymbole des Spiels und die Controller-Grafik mit PlayStation-Symbolen, wenn beim Spielstart ein "
-      "DualSense angeschlossen ist. Wirkt ab dem nächsten Start.",
-      "Les icônes des touches et le schéma de la manette avec les symboles PlayStation, si une DualSense est connectée "
-      "au lancement du jeu. Effectif au prochain lancement.",
-      "Le icone dei tasti e il disegno del controller con i simboli PlayStation, se all'avvio del gioco è collegato un "
-      "DualSense. Attivo dal prossimo avvio.",
-      "Los iconos de botones y el dibujo del mando con símbolos PlayStation, si hay un DualSense conectado al iniciar "
-      "el juego. Se aplica en el próximo inicio.",
-      "Os ícones dos botões e o desenho do controle com símbolos PlayStation, se houver um DualSense conectado ao "
-      "iniciar o jogo. Vale a partir do próximo início.",
-      "Ikony przycisków i rysunek kontrolera z symbolami PlayStation, jeśli przy uruchomieniu gry podłączony jest "
-      "DualSense. Działa od następnego uruchomienia.",
-      "De knoppictogrammen en de controllertekening met PlayStation-symbolen, als er bij het starten een DualSense is "
-      "aangesloten. Werkt vanaf de volgende start.",
-      "Иконки кнопок игры и схема контроллера с символами PlayStation, если DualSense подключён при запуске игры. Со "
-      "следующего запуска.",
-      "ゲーム起動時にDualSenseが接続されていると、ボタンアイコンとコントローラー図がPlayStationの記号になります。"
-      "次回起動時から有効です。",
-      "게임 시작 시 DualSense가 연결되어 있으면 버튼 아이콘과 컨트롤러 그림이 PlayStation 기호로 바뀝니다. 다음 "
-      "실행부터 적용됩니다.",
-      "遊戲啟動時若已連接 DualSense，按鈕圖示與控制器圖會改為 PlayStation 符號。下次啟動時生效。"}},
+     {"Automatic button icons", "Automatische Tastensymbole", "Icônes de touches automatiques",
+      "Icone dei tasti automatiche", "Iconos de botones automáticos", "Ícones de botões automáticos",
+      "Automatyczne ikony przycisków", "Automatische knoppictogrammen", "Автоматические иконки кнопок",
+      "ボタンアイコンの自動切替", "버튼 아이콘 자동 전환", "自動切換按鈕圖示"},
+     {"The button icons and the controller drawing change to the device you use: PlayStation symbols for the "
+      "DualSense, the keys for the keyboard, the game's own for an Xbox controller. Off: always the game's own.",
+      "Die Tastensymbole und die Controller-Grafik wechseln zum Gerät, das du benutzt: PlayStation-Symbole für den "
+      "DualSense, die Tasten für die Tastatur, die des Spiels für einen Xbox-Controller. Aus: immer die des Spiels.",
+      "Les icônes des touches et le schéma de la manette suivent l'appareil utilisé : symboles PlayStation pour la "
+      "DualSense, touches pour le clavier, icônes du jeu pour une manette Xbox. Désactivé : toujours celles du jeu.",
+      "Le icone dei tasti e il disegno del controller seguono il dispositivo in uso: simboli PlayStation per il "
+      "DualSense, i tasti per la tastiera, quelle del gioco per un controller Xbox. Disattivato: sempre quelle del gioco.",
+      "Los iconos de botones y el dibujo del mando cambian según el dispositivo que uses: símbolos PlayStation para el "
+      "DualSense, las teclas para el teclado, los del juego para un mando Xbox. Desactivado: siempre los del juego.",
+      "Os ícones dos botões e o desenho do controle mudam conforme o dispositivo em uso: símbolos PlayStation para o "
+      "DualSense, as teclas para o teclado, os do jogo para um controle Xbox. Desativado: sempre os do jogo.",
+      "Ikony przycisków i rysunek kontrolera zmieniają się zależnie od używanego urządzenia: symbole PlayStation dla "
+      "DualSense, klawisze dla klawiatury, ikony gry dla kontrolera Xbox. Wyłączone: zawsze ikony gry.",
+      "De knoppictogrammen en de controllertekening volgen het apparaat dat je gebruikt: PlayStation-symbolen voor de "
+      "DualSense, de toetsen voor het toetsenbord, die van het spel voor een Xbox-controller. Uit: altijd die van het "
+      "spel.",
+      "Иконки кнопок и схема контроллера меняются под устройство, которым вы играете: символы PlayStation для "
+      "DualSense, клавиши для клавиатуры, родные иконки игры для контроллера Xbox. Выкл.: всегда родные иконки игры.",
+      "ボタンアイコンとコントローラー図が使用中のデバイスに合わせて切り替わります。DualSenseはPlayStationの記号、"
+      "キーボードはキー、Xboxコントローラーはゲーム本来のアイコン。オフ：常にゲーム本来のアイコン。",
+      "버튼 아이콘과 컨트롤러 그림이 사용 중인 장치에 맞춰 바뀝니다. DualSense는 PlayStation 기호, 키보드는 키, "
+      "Xbox 컨트롤러는 게임 기본 아이콘. 끄기: 항상 게임 기본 아이콘.",
+      "按鈕圖示與控制器圖會隨使用中的裝置切換：DualSense 顯示 PlayStation 符號，鍵盤顯示按鍵，Xbox 控制器顯示遊戲原本"
+      "的圖示。關閉：一律使用遊戲原本的圖示。"}},
     {"TestVibration", R_SWITCH, 1,
      {"Test: vibration", "Test: Vibration", "Test : vibrations", "Test: vibrazione", "Prueba: vibración",
       "Teste: vibração", "Test: wibracje", "Test: trilling", "Проверка: вибрация", "テスト: 振動", "테스트: 진동",
@@ -449,7 +451,10 @@ static void menu_language(void)
     if (lstrlenW(g_azDir) + 24 < MAX_PATH) {
         lstrcpyW(az, g_azDir);
         lstrcatW(az, L"data\\azimuth.ini");
-        GetPrivateProfileStringW(L"launcher", L"language", L"", v, LOCALE_NAME_MAX_LENGTH, az);
+        /* Azimuth 1.0: per title (FH2's section); 0.9: the launcher's */
+        GetPrivateProfileStringW(L"title-1a96545b", L"language", L"", v, LOCALE_NAME_MAX_LENGTH, az);
+        if (!v[0])
+            GetPrivateProfileStringW(L"launcher", L"language", L"", v, LOCALE_NAME_MAX_LENGTH, az);
     }
     if (!v[0] && !LCIDToLocaleName(MAKELCID(GetUserDefaultUILanguage(), SORT_DEFAULT), v, LOCALE_NAME_MAX_LENGTH, 0))
         v[0] = 0;
@@ -653,7 +658,7 @@ static int menu_value(int row) /* a switch */
     if (!strcmp(k, "ComboLights"))
         return S.comboLights != 0;
     if (!strcmp(k, "Icons"))
-        return S.icons != 0;
+        return S.icons != ICONS_XBOX;
     if (!strcmp(k, "TestVibration"))
         return g_test.kind == TEST_VIBRATION && now - g_test.at < 4.5;
     if (!strcmp(k, "TestTriggers"))
@@ -713,8 +718,8 @@ static void menu_switch(int row, int v)
         S.comboLights = v;
         fh2_ini_set_int(L"Lightbar", L"ComboLights", v);
     } else if (!strcmp(k, "Icons")) {
-        S.icons = v ? 2 : 0;
-        fh2_ini_set(L"Icons", L"PlayStation", v ? L"Auto" : L"Off");
+        S.icons = v ? ICONS_AUTO : ICONS_XBOX; /* the icons' thread switches the look (icons.h) */
+        fh2_ini_set(L"Icons", L"Mode", v ? L"Auto" : L"Xbox");
     } else if (!strcmp(k, "TestVibration")) {
         if (!v)
             return;
@@ -1004,7 +1009,7 @@ static int menu_install(BYTE *base)
     Image g;
     BYTE *str = NULL, *L = NULL, *descFn, *C = NULL, *classInit;
     if (!g_menuOn) {
-        fh2_say("menu: the page is the game's own this time (files.h: not in mediaoverride) -- no properties");
+        fh2_say("menu: the page is the game's own this time (files.h: not given) -- no properties");
         return 0;
     }
     for (int i = 0; i < MENU_ROWS; i++) {

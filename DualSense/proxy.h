@@ -44,12 +44,24 @@ static HRESULT WINAPI d3d12_missing(void) { return (HRESULT)0x80004001L; }
 static HMODULE g_d3d12Real;
 static char g_d3d12Why[160];
 
-/* the real d3d12.dll (from the process's start, inside DllMain: a system DLL) */
+/* the real d3d12.dll (from the process's start, inside DllMain: a system DLL) -- or another mod's d3d12.dll that
+   was there before (ReShade and the like), renamed d3d12_next.dll by the installer: it gets the calls, and it goes on
+   to the system's itself */
 static void d3d12_load(void)
 {
     WCHAR path[MAX_PATH];
-    UINT n = GetSystemDirectoryW(path, MAX_PATH - 16);
+    DWORD k = GetModuleFileNameW((HMODULE)&__ImageBase, path, MAX_PATH);
     int missing = 0;
+    while (k && path[k - 1] != '\\' && path[k - 1] != '/')
+        k--;
+    if (k && k < MAX_PATH - 20) {
+        lstrcpyW(path + k, L"d3d12_next.dll");
+        if (GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES)
+            g_d3d12Real = LoadLibraryW(path);
+        if (g_d3d12Real)
+            lstrcpyA(g_d3d12Why, "the calls go to d3d12_next.dll (another mod's d3d12.dll, there before this one)");
+    }
+    UINT n = g_d3d12Real ? 0 : GetSystemDirectoryW(path, MAX_PATH - 16);
     if (n && n < MAX_PATH - 16) {
         lstrcatW(path, L"\\d3d12.dll");
         g_d3d12Real = LoadLibraryW(path);

@@ -1,12 +1,14 @@
 /* d3d12.dll -- the PlayStation 5 controller (DualSense, DualSense Edge; USB or Bluetooth, no other software needed)
-   for Forza Horizon 2 on Azimuth 0.9.10, on top of Forza Horizon 2 Extra Options (winmm.dll, 0.2.98) and not without
+   and the keyboard for Forza Horizon 2 on Azimuth (0.9.10 and 1.0.x), with Forza Horizon 2 Extra Options or without
    it. One plain DLL next to azimuth.exe: Windows loads it as Azimuth's d3d12.dll, and it passes Direct3D 12 on to the
-   system's (proxy.h). Azimuth's own files (azimuth-tls.dll among them) stay as they are; Extra Options gives the game
-   the mod's files and patches the game first, and the mod hooks the game only once it is done (hooks.h).
+   system's (proxy.h). Azimuth's files stay as they are, and so do the game's: the mod's own files are in DualSense\
+   next to azimuth.exe. With Extra Options the mod hooks the game only once Extra Options is done with it (hooks.h).
 
-   What the game gets: the DualSense as one of the PC's gamepads (wgi.h: the engine gives the game the PC's
-   Windows.Gaming.Input gamepads, and ours is one of them), with the PlayStation button icons, and the DualSense's
-   settings in its own controller settings, in its language (files.h: through Extra Options' mediaoverride; menu.h).
+   What the game gets: the DualSense and the keyboard as one of the PC's gamepads (wgi.h, keyboard.h: the engine gives
+   the game the PC's Windows.Gaming.Input gamepads, and ours is one of them); the button icons of the device in use --
+   PlayStation, the keys, or the game's own for an Xbox controller -- switched as you go (icons.h); and the
+   DualSense's settings in its own controller settings, in its language (files.h: its files given from the mod's
+   folder; menu.h).
    What the controller gets from the game:
    - rumble: the game's two motors (engine revs, collisions, tyres: media\ControllerRumble.xml) -- as the DualSense's
      rumble emulation (USB/Bluetooth), or, on USB, as HD haptics: our own waveforms on the controller's two haptic
@@ -73,7 +75,7 @@ static struct {
     BYTE color[3], flash[3];
     float brightness;
     int lowBatteryBlink;
-    int icons; /* 0 off, 1 on, 2 auto (a DualSense connected when the game starts) */
+    int icons; /* ICONS_*: the button icons -- the game's own, PlayStation, the device in use, the keys */
     int gyro;  /* 0 off, 1 toggle (mic button), 2 always */
     float gyroMaxAngle;
     int gyroInvert;
@@ -83,6 +85,8 @@ static struct {
     int comboLights;  /* the skill combo on the player lights */
     int trigOn;       /* "Adaptive triggers" ([Triggers] Enabled) */
 } S;
+
+enum { ICONS_XBOX, ICONS_PS, ICONS_AUTO, ICONS_KEYS };
 
 static WORD button_of(const WCHAR *s)
 {
@@ -177,8 +181,17 @@ static void load_settings(void)
     S.comboLights = fh2_ini_int(L"Lightbar", L"ComboLights", 1);
 
     {
-        static const WCHAR *const icons[] = {L"Off", L"On", L"Auto"};
-        S.icons = choice(L"Icons", L"PlayStation", L"Auto", icons, 3, 2);
+        /* [Icons] Mode (3.0 and before: PlayStation=Auto/On/Off) */
+        static const WCHAR *const icons[] = {L"Xbox", L"PlayStation", L"Auto", L"Keyboard"};
+        static const WCHAR *const old[] = {L"Off", L"On", L"Auto"};
+        WCHAR v2[32];
+        fh2_ini_str(L"Icons", L"Mode", L"", v2, 32);
+        if (v2[0])
+            S.icons = choice(L"Icons", L"Mode", L"Auto", icons, 4, ICONS_AUTO);
+        else
+            S.icons = choice(L"Icons", L"PlayStation", L"Auto", old, 3, ICONS_AUTO);
+        if (CompareStringOrdinal(v2, -1, L"Off", -1, TRUE) == CSTR_EQUAL)
+            S.icons = ICONS_XBOX;
     }
     S.gyro = choice(L"Gyro", L"Steering", L"Toggle", gyro, 3, 1);
     S.gyroMaxAngle = fh2_ini_float(L"Gyro", L"MaxAngle", 40);
@@ -207,6 +220,7 @@ static int used(const XINPUT_GAMEPAD *g)
 }
 
 #include "hooks.h"
+#include "keyboard.h"
 #include "wgi.h"
 #include "fx.h"
 #include "car.h"
@@ -1354,11 +1368,16 @@ static DWORD WINAPI controller_thread(void *arg)
     int reading = 0;
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
     for (;;) {
-        wgi_update(d->h != NULL); /* ours among the game's gamepads while the controller is there */
+        if (!g_kbJoined && kb_any()) { /* the first key press: the keyboard's pad joins (and stays) */
+            g_kbJoined = 1;
+            fh2_say("keyboard: in use -- its gamepad joins the game's");
+        }
+        /* ours among the game's gamepads while the controller is there, or the keyboard is in use */
+        wgi_update(d->h != NULL || g_kbJoined);
         if (!d->h) {
             double now = fh2_now();
             if (now < nextScan) {
-                WaitForSingleObject(g_wake, 250);
+                WaitForSingleObject(g_wake, g_kbOn && !g_kbJoined ? 50 : 250);
                 continue;
             }
             nextScan = now + 2.0;
@@ -1373,6 +1392,8 @@ static DWORD WINAPI controller_thread(void *arg)
                 haptics_start();
             send_output(d, 1);
             wgi_update(1);
+            if (S.icons == ICONS_AUTO)
+                g_dsInputAt = GetTickCount64(); /* connected now: its icons */
         }
         /* one read stays pending; the output goes when the game changes something, and every 50 ms */
         if (!reading) {
@@ -1410,13 +1431,14 @@ static DWORD WINAPI controller_thread(void *arg)
         AcquireSRWLockExclusive(&g_lock);
         ZeroMemory(&g_dsPad, sizeof g_dsPad);
         ReleaseSRWLockExclusive(&g_lock);
-        wgi_update(0);
+        wgi_update(g_kbJoined);
         nextScan = fh2_now() + 1.0;
     }
 }
 
 #include "menu.h"
 #include "files.h"
+#include "icons.h"
 #include "proxy.h"
 
 /* ---------------------------------------------------------------------------------------------------------------- */
@@ -1438,25 +1460,17 @@ static DWORD WINAPI game_thread(void *arg)
     return 0;
 }
 
-/* the mod's start, on its own thread as Azimuth starts (from DllMain, after Windows has loaded Azimuth's DLLs, Extra
-   Options' winmm.dll among them): Extra Options, the settings, the files the game will get, the controller, then the
-   game */
-static DWORD WINAPI mod_start(void *arg)
+/* the settings, the log, the files the game will get: once, on the mod's thread or on Azimuth's first file call,
+   whichever comes first (before the game opens any of its files) */
+static INIT_ONCE g_initOnce = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK mod_init(PINIT_ONCE once, PVOID param, PVOID *ctx)
 {
-    HANDLE h;
-    char state[160];
-    (void)arg;
+    (void)once, (void)param, (void)ctx;
     ds_files_open(kDefaultIni);
     if (g_d3d12Why[0])
         ds_note("d3d12: %s", g_d3d12Why);
-    if (!eo_find()) {
-        ds_note("no Forza Horizon 2 Extra Options (its winmm.dll next to azimuth.exe, 0.2.98 for Azimuth 0.9.10): the "
-                "mod works on top of it and not without it -- off; Direct3D 12 goes on as always");
-        return 0;
-    }
-    eo_state(state, sizeof state);
-    fh2_say("Extra Options: \"%s\"", state);
     load_settings();
+    kb_load_settings();
     for (DWORD i = 0; i < 256; i++) {
         DWORD c = i;
         for (int k = 0; k < 8; k++)
@@ -1464,9 +1478,41 @@ static DWORD WINAPI mod_start(void *arg)
         g_crcTable[i] = c;
     }
     menu_language();
-    files_build(S.enabled); /* now, before Play is pressed */
+    if (!S.enabled)
+        return TRUE;
+    if (g_filesHooks < 4)
+        ds_note("files: %d of Azimuth's 4 file functions go through the mod%s", g_filesHooks,
+                g_filesHooks ? "" : " -- the game's own menus and icons");
+    if (g_filesHooks) {
+        files_build(); /* now, before Play is pressed */
+        icons_prepare();
+    }
+    return TRUE;
+}
+
+static void mod_init_once(void) { InitOnceExecuteOnce(&g_initOnce, mod_init, NULL, NULL); }
+
+/* the mod's start, on its own thread as Azimuth starts (from DllMain, after Windows has loaded Azimuth's DLLs,
+   Extra Options' winmm.dll among them when it is there): the settings and files, the controller and the keyboard,
+   then the game */
+static DWORD WINAPI mod_start(void *arg)
+{
+    HANDLE h;
+    char state[160];
+    (void)arg;
+    mod_init_once();
     if (!S.enabled) {
-        ds_note("off ([DualSense] Enabled=0): no controller, no hooks, none of its files for the game");
+        ds_note("off ([DualSense] Enabled=0): no controller, no keyboard, no hooks, none of its files for the game");
+        return 0;
+    }
+    if (eo_find()) {
+        eo_state(state, sizeof state);
+        fh2_say("Extra Options: there (\"%s\") -- the mod hooks the game once it is done", state);
+    } else
+        fh2_say("Extra Options: not there -- the mod works on its own");
+    icons_start();
+    if (GetEnvironmentVariableW(L"FH2_DS_TEST", NULL, 0)) { /* tests without the game: the files and icons only */
+        ds_note("test: FH2_DS_TEST is set -- no controller, no game hooks");
         return 0;
     }
     wgi_find_engine((BYTE *)GetModuleHandleW(NULL)); /* azimuth.exe */
@@ -1476,11 +1522,13 @@ static DWORD WINAPI mod_start(void *arg)
     h = CreateThread(NULL, 0, game_thread, NULL, 0, NULL);
     if (h)
         CloseHandle(h);
-    ds_note("on -- vibration %s, triggers %s, light bar mode %d, gyro steering %s; menus %d%%, events %d%%, road %d%%",
+    ds_note("on -- vibration %s, triggers %s, light bar mode %d, gyro steering %s; menus %d%%, events %d%%, road %d%%; "
+            "keyboard %s; icons %s",
             S.haptics == 0 ? "off" : S.haptics == 1 ? "rumble" : S.haptics == 2 ? "HD haptics (USB)" : "auto",
             !S.trigOn || !S.triggers ? "off" : S.triggers == 1 ? "resistance" : "game", S.lightMode,
             S.gyro == 0 ? "off" : S.gyro == 1 ? "mic button" : "always", (int)(S.menus * 100 + 0.5f),
-            (int)(S.events * 100 + 0.5f), (int)(S.surface * 100 + 0.5f));
+            (int)(S.events * 100 + 0.5f), (int)(S.surface * 100 + 0.5f), g_kbOn ? "on" : "off",
+            !g_iconsOn ? "the game's own" : S.icons == ICONS_AUTO ? "following the device in use" : kSetName[g_iconSet]);
     return 0;
 }
 
@@ -1491,6 +1539,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
         DisableThreadLibraryCalls(inst);
         d3d12_load();
         g_wake = CreateEventW(NULL, FALSE, FALSE, NULL);
+        files_install(); /* Azimuth's file functions through ours, before it opens anything */
         h = CreateThread(NULL, 0, mod_start, NULL, 0, NULL);
         if (h)
             CloseHandle(h);
