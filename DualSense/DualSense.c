@@ -221,6 +221,7 @@ static int used(const XINPUT_GAMEPAD *g)
 
 #include "hooks.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "wgi.h"
 #include "fx.h"
 #include "car.h"
@@ -1471,6 +1472,7 @@ static BOOL CALLBACK mod_init(PINIT_ONCE once, PVOID param, PVOID *ctx)
         ds_note("d3d12: %s", g_d3d12Why);
     load_settings();
     kb_load_settings();
+    ms_load_settings();
     for (DWORD i = 0; i < 256; i++) {
         DWORD c = i;
         for (int k = 0; k < 8; k++)
@@ -1519,15 +1521,17 @@ static DWORD WINAPI mod_start(void *arg)
     h = CreateThread(NULL, 0, controller_thread, NULL, 0, NULL);
     if (h)
         CloseHandle(h);
+    ms_start();
     h = CreateThread(NULL, 0, game_thread, NULL, 0, NULL);
     if (h)
         CloseHandle(h);
     ds_note("on -- vibration %s, triggers %s, light bar mode %d, gyro steering %s; menus %d%%, events %d%%, road %d%%; "
-            "keyboard %s; icons %s",
+            "keyboard %s, mouse %s; icons %s",
             S.haptics == 0 ? "off" : S.haptics == 1 ? "rumble" : S.haptics == 2 ? "HD haptics (USB)" : "auto",
             !S.trigOn || !S.triggers ? "off" : S.triggers == 1 ? "resistance" : "game", S.lightMode,
             S.gyro == 0 ? "off" : S.gyro == 1 ? "mic button" : "always", (int)(S.menus * 100 + 0.5f),
             (int)(S.events * 100 + 0.5f), (int)(S.surface * 100 + 0.5f), g_kbOn ? "on" : "off",
+            g_msOn ? "on" : "off",
             !g_iconsOn ? "the game's own" : S.icons == ICONS_AUTO ? "following the device in use" : kSetName[g_iconSet]);
     return 0;
 }

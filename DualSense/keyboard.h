@@ -2,8 +2,11 @@
    DualSense into the one gamepad of the mod's that the game gets (wgi.h). Steering and the pedals move smoothly, like
    a stick and triggers, at the speeds in the ini. Keys count only while the game's window is in front. The gamepad
    joins the game's at the first key press (or when the DualSense connects) and stays. Settings: [Keyboard] and [Keys]
-   in DualSense.ini. Extra Options' own keys (F1-F4 and Tab by default) are not used here. */
+   in DualSense.ini. Extra Options' own keys (F1-F4 and Tab by default) are not used here. The mouse looks around
+   (mouse.h). */
 #pragma once
+
+static void ms_poll(int in, double now, float dt, float *x, float *y);
 
 enum {
     KB_THROTTLE, KB_BRAKE, KB_LEFT, KB_RIGHT,               /* RT, LT, left stick X */
@@ -196,8 +199,10 @@ static void kb_poll(XINPUT_GAMEPAD *out)
     g_kbLookY = kb_approach(g_kbLookY, in ? (float)(kb_down(KB_LOOK_UP) - kb_down(KB_LOOK_DOWN)) : 0, g_kbLookSpeed, dt);
     g.sThumbLX = fh2_axis(g_kbSteer);
     g.sThumbLY = fh2_axis(in ? (float)(kb_down(KB_STICK_UP) - kb_down(KB_STICK_DOWN)) : 0);
-    g.sThumbRX = fh2_axis(g_kbLookX);
-    g.sThumbRY = fh2_axis(g_kbLookY);
+    float mx, my;
+    ms_poll(in, now, dt, &mx, &my); /* the mouse's look on top of the keys' */
+    g.sThumbRX = fh2_axis(g_kbLookX + mx);
+    g.sThumbRY = fh2_axis(g_kbLookY + my);
     g.bRightTrigger = (BYTE)(g_kbThrottle * 255.0f + 0.5f);
     g.bLeftTrigger = (BYTE)(g_kbBrake * 255.0f + 0.5f);
     if (in)

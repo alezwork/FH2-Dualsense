@@ -1,6 +1,6 @@
 @echo off
 rem Builds d3d12.dll, the PlayStation 5 controller and the keyboard for Forza Horizon 2 on Azimuth, into out\ (the
-rem PlayStation pictures inside it: tools\make_pack.py), and the release in out\release\ and out\FH2-DualSense-<ver>.zip
+rem PlayStation pictures inside it: tools\make_pack.py), and the release in out\release\ and out\FH2-Input-<ver>.zip
 rem (d3d12.dll, Install.cmd, Uninstall.cmd, install.ps1, README.txt). It goes next to azimuth.exe, with Forza Horizon 2
 rem Extra Options or without it; it writes its DualSense\DualSense.ini there with the defaults when there is none.
 rem build.cmd install   also installs it into the Azimuth folder (install\install.ps1 finds it, or AZIMUTH= says it).
@@ -44,9 +44,9 @@ copy /y install\Install.cmd "%R%\" >nul
 copy /y install\Uninstall.cmd "%R%\" >nul
 copy /y install\install.ps1 "%R%\" >nul
 copy /y install\README.txt "%R%\" >nul
-if exist "%OUT%\FH2-DualSense-%VER%.zip" del "%OUT%\FH2-DualSense-%VER%.zip"
-powershell -NoProfile -Command "Compress-Archive -Path '%R%\*' -DestinationPath '%OUT%\FH2-DualSense-%VER%.zip'" || exit /b 1
-echo release "%OUT%\FH2-DualSense-%VER%.zip"
+if exist "%OUT%\FH2-Input-%VER%.zip" del "%OUT%\FH2-Input-%VER%.zip"
+powershell -NoProfile -Command "Compress-Archive -Path '%R%\*' -DestinationPath '%OUT%\FH2-Input-%VER%.zip'" || exit /b 1
+echo release "%OUT%\FH2-Input-%VER%.zip"
 if /i not "%~1"=="install" exit /b 0
 
 if defined AZIMUTH (

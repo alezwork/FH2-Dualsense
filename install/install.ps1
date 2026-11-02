@@ -61,7 +61,7 @@ function Find-Azimuth {
     return $null
 }
 
-Say 'FH2-DualSense -- the DualSense and the keyboard for Forza Horizon 2 on Azimuth' 'Cyan'
+Say 'FH2-Input -- the DualSense, the keyboard and the mouse for Forza Horizon 2 on Azimuth' 'Cyan'
 $az = Find-Azimuth
 if (-not $az) { Say 'Azimuth not found: nothing done.' 'Red'; Done 1 }
 Say "Azimuth: $az"
@@ -100,7 +100,7 @@ if ($Uninstall) {
 
 $src = Join-Path $here 'd3d12.dll'
 if (-not (Test-Path -LiteralPath $src)) { Say "No d3d12.dll next to this script ($here)." 'Red'; Done 1 }
-if (-not (Test-Ours $src)) { Say 'The d3d12.dll next to this script is not FH2-DualSense.' 'Red'; Done 1 }
+if (-not (Test-Ours $src)) { Say 'The d3d12.dll next to this script is not FH2-Input (FH2-DualSense).' 'Red'; Done 1 }
 
 # someone else's d3d12.dll: kept, chained
 if ((Test-Path -LiteralPath $dll) -and -not (Test-Ours $dll)) {

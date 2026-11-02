@@ -1,5 +1,5 @@
-FH2-DualSense 4.0 -- the DualSense (PS5) and the keyboard for Forza Horizon 2 on the Azimuth emulator
-=====================================================================================================
+FH2-Input 4.1 -- the DualSense (PS5), the keyboard and the mouse for Forza Horizon 2 on the Azimuth emulator
+============================================================================================================
 
 INSTALL
   1. Close Azimuth.
@@ -19,6 +19,8 @@ WHAT IT DOES
   - The DualSense over USB or Bluetooth: HD haptics, adaptive triggers from the car and the road, light bar, gyro.
   - The keyboard as a gamepad (together with the DualSense): W/S throttle/brake, A/D steering (smooth), Space/Enter
     A, E/Backspace B, Q X, R Y, Shift LB, C RB, Esc Menu, Tab View, arrows D-pad, J/L/I/K look around. Keys: [Keys].
+  - The mouse looks around (the right stick): the view goes where you move it and comes back to the front when the
+    mouse is still ([Mouse]); its buttons can be bound as keys (Mouse1..Mouse5 in [Keys]).
   - The button icons follow the device you play with, as you go: PlayStation symbols for the DualSense, the keys for
     the keyboard, the game's own for an Xbox controller ([Icons] Mode=Auto, or always PlayStation/Keyboard/Xbox).
   - Nothing is written into the game's folder: what the mod gives the game is in DualSense\cache next to azimuth.exe.
